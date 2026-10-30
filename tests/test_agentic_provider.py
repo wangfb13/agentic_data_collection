@@ -152,6 +152,135 @@ class ProviderTests(unittest.TestCase):
                 provider.AgentProvider({"base_url": url})
 
 
+def agent_context():
+    return {"planning_mode": "agent", "suggestions": [
+                {"cond": "A", "cells": [{"offset_mm": 0., "reps": 2}, {"offset_mm": 4., "reps": 2}]}],
+            "approved_models": [{"model_id": "fit_1"}],
+            "references": {"level:zero": {"offset_mm": 0., "bias_mm": 1.2},
+                           "level:four": {"offset_mm": 4., "bias_mm": 2.1}},
+            "valid_evidence_refs": ["level:zero", "level:four"],
+            "stop": {"eligible": False}, "allowed_gains": [.5, .75, 1.]}
+
+
+def agent_decision():
+    return {"action": "propose_batch", "reason": "测量局部斜率变化，区分零点偏差与非线性。",
+            "plan": {"cond": "A", "cells": [{"offset_mm": 1.75, "reps": 4}, {"offset_mm": 3.25, "reps": 2}],
+                     "model_id": None, "gain": 1.,
+                     "hypothesis": "零点至正向区间的误差可能来自局部斜率改变。",
+                     "evidence_refs": ["level:zero", "level:four"],
+                     "expected_outcome": "若新位置仍呈同向等量误差则支持零点偏差；若随位置变化则支持非线性。"}}
+
+
+class AgentPlanningProviderTests(unittest.TestCase):
+    make = ProviderTests.make
+
+    def test_agent_formulates_novel_offsets_without_candidate_whitelist(self):
+        value = agent_decision()
+        instance, client = self.make(stream(json.dumps(value, ensure_ascii=False)))
+        result = instance.propose(agent_context())
+        self.assertEqual(result['plan']['cells'], value['plan']['cells'])
+        self.assertNotIn('candidate_id', result)
+        self.assertEqual(result['_meta']['planning_mode'], 'agent')
+        payload = client.post.call_args.kwargs['json']
+        self.assertEqual(payload['instructions'], provider.AGENT_SYSTEM)
+        self.assertIn('NOT a whitelist', payload['instructions'])
+        self.assertIn('a midpoint', payload['instructions'])
+        self.assertIn('hypothesis', payload['instructions'])
+        self.assertEqual(json.loads(payload['input'][0]['content']), agent_context())
+        self.assertNotIn('tools', payload)
+        self.assertNotIn('text', payload)  # Local validation, not claimed constrained decoding.
+        self.assertFalse(payload['store'])
+        self.assertTrue(payload['stream'])
+
+    def test_agent_mode_does_not_require_or_validate_old_candidate_ids(self):
+        ctx = agent_context()
+        ctx['ranked_candidates'] = [{'missing_id': True}]
+        instance, _ = self.make(stream(json.dumps(agent_decision())))
+        self.assertEqual(instance.propose(ctx)['action'], 'propose_batch')
+
+    def test_old_campaign_retains_original_prompt_and_protocol(self):
+        value = {'action': 'select_batch', 'candidate_id': 'a_0_2', 'reason': '复测零点'}
+        instance, client = self.make(stream(json.dumps(value)))
+        result = instance.propose(context())
+        self.assertEqual(result['candidate_id'], 'a_0_2')
+        self.assertEqual(client.post.call_args.kwargs['json']['instructions'], provider.SYSTEM)
+        self.assertNotIn('planning_mode', result['_meta'])
+
+    def test_agent_shape_rejections_are_sanitized_retryable_proposal_errors(self):
+        original = agent_decision()
+        extra_plan = copy.deepcopy(original); extra_plan['plan']['robot_command'] = 'super-secret-raw-response'
+        extra_cell = copy.deepcopy(original); extra_cell['plan']['cells'][0]['move_tcp'] = 'super-secret-raw-response'
+        bad_reps = copy.deepcopy(original); bad_reps['plan']['cells'][0]['reps'] = True
+        bad_cond = copy.deepcopy(original); bad_cond['plan']['cond'] = 'super-secret-raw-response'
+        wrong_protocol = {'action': 'select_batch', 'candidate_id': 'a_0_2', 'reason': 'super-secret-raw-response'}
+        variants = [extra_plan, extra_cell, bad_reps, bad_cond, wrong_protocol,
+                    dict(original, _meta={'access_token': 'super-secret-raw-response'}),
+                    dict(original, action='pause')]
+        for value in variants:
+            instance, _ = self.make(stream(json.dumps(value)))
+            with self.subTest(value=value), self.assertRaises(provider.ProposalError) as caught:
+                instance.propose(agent_context())
+            self.assertTrue(caught.exception.retryable)
+            self.assertEqual(caught.exception.sanitized_reason, str(caught.exception))
+            self.assertNotIn('secret', str(caught.exception))
+            self.assertNotIn('secret', caught.exception.code)
+
+    def test_strict_model_json_failures_are_repairable_in_both_protocols(self):
+        values = ['```json\n{}\n```', '{"action":"pause","action":"freeze","reason":"x","plan":null}',
+                  '{"action":"pause","reason":NaN,"plan":null}', 'super-secret-raw-response']
+        for ctx in (context(), agent_context()):
+            for value in values:
+                instance, _ = self.make(stream(value))
+                with self.subTest(ctx=ctx, value=value), self.assertRaises(provider.ProposalError) as caught:
+                    instance.propose(ctx)
+                self.assertEqual(caught.exception.code, 'invalid_json')
+                self.assertNotIn('secret', str(caught.exception))
+
+    def test_transport_auth_and_incomplete_are_not_proposal_repair_errors(self):
+        cases = [(None, 401), (None, 429),
+                 (["data: {invalid-stream}"], 200),
+                 (stream('{}', event='response.incomplete', status='incomplete'), 200),
+                 (stream('{}', output=[{'type': 'function_call', 'name': 'move'}]), 200)]
+        for events, status in cases:
+            instance, client = self.make(events, status)
+            with self.subTest(events=events, status=status), self.assertRaises(provider.ProviderError) as caught:
+                instance.propose(agent_context())
+            self.assertNotIsInstance(caught.exception, provider.ProposalError)
+            self.assertEqual(client.post.call_count, 1)
+
+    def test_freeze_requires_numerical_stop_and_null_plan(self):
+        value = {'action': 'freeze', 'reason': '当前数值条件和前瞻反馈已满足。', 'plan': None}
+        instance, _ = self.make(stream(json.dumps(value)))
+        with self.assertRaises(provider.ProposalError) as caught:
+            instance.propose(agent_context())
+        self.assertEqual(caught.exception.code, 'freeze_not_eligible')
+        ctx = agent_context(); ctx['stop']['eligible'] = True
+        instance, _ = self.make(stream(json.dumps(value)))
+        self.assertEqual(instance.propose(ctx)['action'], 'freeze')
+        value['plan'] = agent_decision()['plan']
+        instance, _ = self.make(stream(json.dumps(value)))
+        with self.assertRaises(provider.ProposalError):
+            instance.propose(ctx)
+
+    def test_approved_B_plan_shape_and_pause(self):
+        value = agent_decision()
+        value['plan'].update(cond='B', model_id='fit_1', gain=.75)
+        instance, _ = self.make(stream(json.dumps(value)))
+        self.assertEqual(instance.propose(agent_context())['plan']['gain'], .75)
+        paused = {'action': 'pause', 'reason': '当前证据不足，需要现场检查。', 'plan': None}
+        instance, _ = self.make(stream(json.dumps(paused)))
+        self.assertEqual(instance.propose(agent_context())['plan'], None)
+
+    def test_explicit_mock_uses_new_shape_and_never_networks(self):
+        with patch.object(provider, 'new_session') as network:
+            instance = provider.AgentProvider({'backend': 'mock'})
+            result = instance.propose(agent_context())
+            self.assertEqual(result['action'], 'pause')
+            self.assertIsNone(result['plan'])
+            self.assertEqual(result['_meta']['backend'], 'mock')
+            network.assert_not_called()
+
+
 class AuthTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

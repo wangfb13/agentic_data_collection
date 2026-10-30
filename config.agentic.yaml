@@ -1,6 +1,11 @@
 schema: agentic_campaign_config_v1
 base_config: config.e1e2.yaml
 seed_sessions: []
+planning:
+  # New campaigns: the Agent writes complete batches; local suggestions are optional.
+  # Existing campaign.json files without this section keep candidate selection.
+  mode: agent
+  max_attempts: 3
 provider:
   backend: chatgpt
   model: null
@@ -34,6 +39,7 @@ learning:
   min_gain_mm: 0.1
   plateau_batches: 2
   min_B_batches: 1
+  min_B_per_cell: 1
 policy:
   gains: [0.5, 0.75, 1.0]
 validation:

@@ -1,7 +1,7 @@
 """Durable, bounded active experiment campaigns around the independent E1/E2 runner.
 
-The LLM selects finite, locally generated experiments. It cannot supply actuator
-commands, change the task definition, or relax the fixed execution limits.
+The LLM proposes bounded experimental batches, or selects legacy candidates.
+It cannot supply actuator commands or relax the fixed execution limits.
 """
 from __future__ import annotations
 
@@ -46,6 +46,14 @@ def finite(value, name, positive=False):
 
 
 def validate_settings(s):
+    planning = s.get('planning', {})
+    if planning.get('mode', 'candidate') not in ('agent', 'candidate'):
+        raise ValueError('planning.mode 必须为 agent 或 candidate')
+    attempts = planning.get('max_attempts', 3)
+    if isinstance(attempts, bool) or not isinstance(attempts, int) or not 1 <= attempts <= 5:
+        raise ValueError('planning.max_attempts 必须为1至5的整数')
+    if planning.get('mode') == 'agent' and not s['scope'].get('adaptive', False):
+        raise ValueError('Agent 自拟计划需要 scope.adaptive；旧 campaign 保留 candidate 模式')
     scope = s['scope']
     lo, hi = finite(scope['min_mm'], 'min_mm'), finite(scope['max_mm'], 'max_mm')
     if not -25 <= lo < hi <= 25 or not lo <= 0 <= hi:
@@ -85,7 +93,7 @@ def validate_settings(s):
         raise ValueError('success_target 必须位于 (0,1)')
     for k in ('target_mae_mm', 'target_p90_mm', 'min_gain_mm'):
         finite(s['learning'][k], 'learning.' + k, True)
-    for k in ('min_levels', 'min_per_level', 'plateau_batches', 'min_B_batches'):
+    for k in ('min_levels', 'min_per_level', 'plateau_batches', 'min_B_batches', 'min_B_per_cell'):
         v = s['learning'].get(k, 1)
         if isinstance(v, bool) or not isinstance(v, int) or v < 1:
             raise ValueError('learning.' + k + ' 必须为正整数')
@@ -240,7 +248,10 @@ def validate_candidate(candidate, settings, cfg, remaining, approved_models):
     if candidate['cond'] == 'B' and candidate.get('model_id') not in approved_models:
         raise ValueError('B 候选没有经过验证的模型')
     policy = candidate.get('policy') or {'gain': 1.0}
-    if set(policy) - {'gain'} or policy.get('gain', 1.) not in settings['policy']['gains']:
+    gain = policy.get('gain', 1.)
+    if (set(policy) - {'gain'} or isinstance(gain, bool) or
+            (candidate['cond'] == 'B' and gain not in settings['policy']['gains']) or
+            (candidate['cond'] == 'A' and gain != 1.)):
         raise ValueError('候选包含未授权的策略字段或增益')
     plan = make_plan(candidate, cfg, seed=settings['seed'])
     if len(plan) > remaining:
@@ -320,6 +331,19 @@ class Campaign:
 
     def save(self): atomic_json(self.path, self.state)
 
+    def agent_planning(self):
+        # Missing mode belongs to an already-created legacy campaign.
+        return self.settings.get('planning', {}).get('mode', 'candidate') == 'agent'
+
+    def next_decision_number(self):
+        # A crash may leave audit files before state.decisions is committed.
+        # Never reuse their numbers on resume.
+        numbers = [int(d['number']) for d in self.state['decisions'] if isinstance(d.get('number'), int)]
+        for path in (self.root / 'decisions').glob('*_*.json'):
+            prefix = path.name.split('_', 1)[0]
+            if prefix.isdigit(): numbers.append(int(prefix))
+        return max(numbers, default=0) + 1
+
     @staticmethod
     def hardware_manifest(cfg, settings):
         if settings.get('simulate'): return {}
@@ -379,6 +403,20 @@ class Campaign:
         return json.loads((self.root / self.state['models'][mid]).read_text()) if mid else None
 
     def stop_evidence(self, report, candidates=None):
+        if self.agent_planning():
+            from .agentic_evaluation import prospective_B_evidence
+            evidence = prospective_B_evidence(report, self.state['batches'], self.root,
+                                              self.settings, self.state.get('design'))
+            eligible = bool(report.get('stopping_eligible') and evidence['eligible'])
+            return {'eligible': eligible, 'mapping_eligible': bool(report.get('stopping_eligible')),
+                    'B_evidence': evidence,
+                    'required_B_cells': evidence['required_cells'],
+                    'B_batches_on_current_model': evidence['B_batches_on_current_model'],
+                    'B_exploratory_success_rate': evidence['success_rate'],
+                    'unresolved_design_candidates': [],
+                    'advisory_design_candidates': [c['id'] for c in (candidates or []) if c.get('unresolved')],
+                    'reason': '映射精度及当前模型同一增益的必测点 B 覆盖均满足要求' if eligible else
+                              '仍需满足映射精度，以及当前模型同一增益在必测点和两种瓶子的 B 验证'}
         best = report.get('best_model')
         tested = [b for b in self.state['batches'] if b['phase'] == 'explore' and b['status'] == 'complete'
                   and b['candidate'].get('cond') == 'B' and best and b.get('model_id') == best['model_id']]
@@ -420,6 +458,8 @@ class Campaign:
         return sorted(valid, key=lambda c: (not bool(c.get('unresolved')), -c.get('score', 0.)))
 
     def decide(self, report, candidates, stop):
+        if self.agent_planning():
+            return self.decide_plan(report, candidates, stop)
         context = {'ranked_candidates': candidates,
             'approved_models': [{'model_id': k} for k in self.state['models']],
             'analysis': {k: report.get(k) for k in ('metrics', 'diagnostics', 'quality')},
@@ -428,7 +468,7 @@ class Campaign:
                             'current_design': self.state.get('design'),
                             'remaining_trials': self.settings['budget']['max_trials'] - self._spent(),
                             'fixed_execution_config_sha256': fingerprint(self.cfg)}}
-        number = len(self.state['decisions']) + 1
+        number = self.next_decision_number()
         atomic_json(self.root / 'decisions' / f'{number:04d}_input.json', context)
         backend = self.settings['provider']['backend']
         if backend in ('deterministic', 'mock'):
@@ -449,37 +489,202 @@ class Campaign:
         self.save(); self.say('Agent：' + decision['reason'])
         return decision, chosen
 
-    def freeze(self, report, reason):
+    def planning_context(self, report, suggestions, stop):
+        from .agentic_planning import build_context
+        remaining = self.settings['budget']['max_trials'] - self._spent() - self.state['validation_reserved_trials']
+        metrics_by_batch = {h['batch']: h.get('metrics', {}) for h in self.state['history'] if 'batch' in h}
+        history = []
+        for batch in self.state['batches']:
+            candidate = batch['candidate']
+            plan = (candidate.get('proposal') or {}).get('plan') or {}
+            history.append({'id': batch['id'], 'batch': batch['id'], 'phase': batch['phase'],
+                'round_index': candidate.get('round_index'), 'cond': candidate['cond'],
+                'model_id': batch.get('model_id'), 'cells': candidate['cells'], 'policy': candidate.get('policy'),
+                'status': batch['status'], 'reason': candidate.get('reason'),
+                'hypothesis': plan.get('hypothesis'), 'expected_outcome': plan.get('expected_outcome'),
+                'design': batch.get('design_after'), 'metrics': metrics_by_batch.get(batch['id'], {})})
+        context = build_context(report, self.settings, self.cfg, self.state.get('design'),
+                                history, {k: self.model(k) for k in self.state['models']},
+                                remaining, stop, suggestions, len(self.state['batches']))
+        context['fixed_execution_config_sha256'] = fingerprint(self.cfg)
+        T0 = self.state['context'].get('T0')
+        if T0 is not None:
+            from .e1e2_core import MotionBounds
+            bounds = MotionBounds(self.cfg, T0)
+            # All three nominal targets have a linear z constraint in delta.
+            lo, hi = self.settings['scope']['min_mm'], self.settings['scope']['max_mm']
+            az = float(bounds.a[2]); zmin = -float(self.cfg['motion']['z_below_T0_mm'])
+            if abs(az) > 1e-12:
+                for extra in (0., -az * self.cfg['motion']['pre_mm'], self.cfg['motion']['lift_mm']):
+                    cut = (zmin - extra) / az
+                    if az > 0: lo = max(lo, cut)
+                    else: hi = min(hi, cut)
+            context['motion_evidence'] = {'a_base': bounds.a.tolist(),
+                'T0_xyz_mm': np.asarray(T0)[:3, 3].tolist(),
+                'nominal_height_feasible_offset_interval_mm': [lo, hi] if lo <= hi else None,
+                'note': '仅当前 T0 的名义抓取/退让/提起高度计算；非碰撞保证，执行器继续逐目标检查'}
+        return context
+
+    def decide_plan(self, report, suggestions, stop):
+        from .agentic_planning import validate_plan_response
+        from .agentic_provider import AgentProvider, ProposalError
+        context = self.planning_context(report, suggestions, stop)
+        remaining = self.settings['budget']['max_trials'] - self._spent() - self.state['validation_reserved_trials']
+        number = self.next_decision_number()
+        prefix = self.root / 'decisions' / f'{number:04d}'
+        atomic_json(str(prefix) + '_input.json', context)
+        backend = self.settings['provider']['backend']
+        deterministic = backend in ('deterministic', 'mock')
+        if not deterministic and self.provider is None:
+            self.provider = AgentProvider(self.settings['provider'])
+        attempts = self.settings.get('planning', {}).get('max_attempts', 3)
+        for attempt in range(1, attempts + 1):
+            attempt_prefix = str(prefix) + f'_attempt_{attempt:02d}'
+            atomic_json(attempt_prefix + '_input.json', context)
+            decision = None
+            try:
+                if deterministic:
+                    # This path is an explicitly selected offline baseline, never
+                    # a fallback for failed ChatGPT planning.
+                    if stop['eligible']:
+                        decision = {'action': 'freeze', 'reason': stop['reason'], 'plan': None}
+                    elif suggestions:
+                        suggestion = suggestions[(attempt - 1) % len(suggestions)]
+                        decision = {'action': 'propose_batch', 'reason': '显式 deterministic 规则基线：' + suggestion['reason'],
+                            'plan': {'cond': suggestion['cond'], 'cells': copy.deepcopy(suggestion['cells']),
+                                     'model_id': suggestion.get('model_id') if suggestion['cond'] == 'B' else None,
+                                     'gain': suggestion.get('policy', {}).get('gain', 1.) if suggestion['cond'] == 'B' else 1.,
+                                     'hypothesis': '显式规则基线用于离线比较，不是 Agent 自拟计划',
+                                     'evidence_refs': ['metrics'], 'expected_outcome': '通过新增真实或模拟测量检验当前映射与纠正表现'}}
+                    else:
+                        decision = {'action': 'pause', 'reason': '显式规则基线没有候选；未调用 Agent', 'plan': None}
+                    decision['_meta'] = {'provider': 'explicit_deterministic', 'llm_used': False}
+                else:
+                    decision = self.provider.propose(context)
+                payload = {k: v for k, v in decision.items() if k != '_meta'} if isinstance(decision, dict) else decision
+                # Write only strict finite data; malformed provider output is
+                # represented by its rejection below, never executed.
+                json.dumps(payload, allow_nan=False)
+                atomic_json(attempt_prefix + '_proposal.json', decision)
+                chosen = validate_plan_response(payload, settings=self.settings, cfg=self.cfg,
+                    design=self.state.get('design'), approved_models={k: self.model(k) for k in self.state['models']},
+                    remaining_trials=remaining, context=context, round_index=len(self.state['batches']),
+                    T0=self.state['context'].get('T0'))
+                if decision['action'] == 'freeze' and not stop['eligible']:
+                    raise ValueError('停止条件未满足；请查看 stop 中的映射精度和缺失 B 覆盖，不能提前宣告结束')
+                atomic_json(attempt_prefix + '_check.json', {'accepted': True,
+                    'candidate_id': chosen['id'] if chosen else None,
+                    'warnings': chosen.get('warnings', []) if chosen else []})
+            except (ValueError, TypeError, ProposalError) as exc:
+                error = str(exc)[:2000] or type(exc).__name__
+                code = getattr(exc, 'code', 'invalid_proposal')
+                atomic_json(attempt_prefix + '_check.json', {'accepted': False, 'code': code, 'reason': error})
+                self.say(f'Agent 计划未通过检查（{attempt}/{attempts}）：{error}')
+                context['revision'] = {'attempt': attempt + 1, 'previous_rejection': {'code': code, 'reason': error},
+                    'instruction': '根据具体拒绝原因重新提交完整计划；不能修改约束，无法解决则 pause。'}
+                # A valid-shaped rejected plan is useful for targeted repair;
+                # provider parser failures deliberately do not expose raw text.
+                if isinstance(decision, dict):
+                    try:
+                        clean = {k: v for k, v in decision.items() if k != '_meta'}
+                        json.dumps(clean, allow_nan=False)
+                        context['revision']['previous_proposal'] = clean
+                    except (TypeError, ValueError):
+                        pass
+                if attempt < attempts:
+                    continue
+                self.state['decisions'].append({'number': number, 'action': 'rejected', 'reason': error,
+                                               'attempts': attempt, 'candidate_id': None})
+                self.save()
+                raise ValueError(f'Agent 连续 {attempts} 次计划未通过检查，已暂停；未切换到规则方案。最后原因：{error}') from None
+            except Exception as exc:
+                # Transport/auth failures are not proposal mistakes: pause now.
+                atomic_json(attempt_prefix + '_check.json', {'accepted': False, 'code': 'provider_unavailable',
+                                                            'reason': str(exc)[:2000]})
+                self.state['decisions'].append({'number': number, 'action': 'provider_error',
+                                               'reason': str(exc)[:2000], 'attempts': attempt, 'candidate_id': None})
+                self.save()
+                raise
+            atomic_json(str(prefix) + '_decision.json', decision)
+            if chosen:
+                chosen['decision_number'] = number
+                atomic_json(str(prefix) + '_validated_plan.json', chosen)
+                self.say('Agent 自拟计划：' + chosen['cond'] + '；' +
+                         '，'.join(f"{c['offset_mm']:+g} mm × {c['reps']}" for c in chosen['cells']))
+            self.state['decisions'].append({'number': number, 'action': decision['action'],
+                'reason': decision['reason'], 'candidate_id': chosen['id'] if chosen else None, 'attempts': attempt})
+            self.state.pop('last_error', None)
+            self.save(); self.say('Agent：' + decision['reason'])
+            return decision, chosen
+
+    def freeze(self, report, reason, trigger='agent'):
         model = report.get('best_model')
         if not model or not model.get('usable_for_B'):
             self.state.update(status='no_usable_model', stop_reason=reason + '；没有可部署的触觉模型')
             self.save(); return
-        # A gain is selected only from completed prospective B batches on this model.
-        gain_scores = {}
-        from .e1e2 import rebuild_summary
-        for b in self.state['batches']:
-            if b['status'] != 'complete' or b['phase'] != 'explore' or b.get('model_id') != model['model_id'] or b['candidate'].get('cond') != 'B': continue
-            gain = b['candidate'].get('policy', {}).get('gain', 1.)
-            rows = [r for r in rebuild_summary(self.root / b['path']) if r['kind'] == 'scan' and r['recording_complete'] and r['label'] != 'invalid']
-            # Compare only matching bottle/offset cells across gains below.
-            gain_scores.setdefault(gain, []).extend(rows)
         chosen_gain = 1.; selection = 'default; no comparable prospective gain evidence'
-        if gain_scores:
-            common = set.intersection(*[{(r['bottle'], r['delta_mm']) for r in rows} for rows in gain_scores.values()])
-            if common:
-                def score(g):
-                    rows = [r for r in gain_scores[g] if (r['bottle'], r['delta_mm']) in common]
-                    cells = [[r for r in rows if (r['bottle'], r['delta_mm']) == key] for key in common]
-                    return (float(np.mean([np.mean([r['success'] for r in cell]) for cell in cells])),
-                            -float(np.mean([np.mean([r['regrasps'] for r in cell]) for cell in cells])))
-                chosen_gain = max(gain_scores, key=score); selection = 'prospective B: equal-weight matched bottle/offset cells; success then fewer regrasps'
+        if not self.agent_planning():
+            # A gain is selected only from completed prospective B batches on this model.
+            gain_scores = {}
+            from .e1e2 import rebuild_summary
+            for b in self.state['batches']:
+                if b['status'] != 'complete' or b['phase'] != 'explore' or b.get('model_id') != model['model_id'] or b['candidate'].get('cond') != 'B': continue
+                gain = b['candidate'].get('policy', {}).get('gain', 1.)
+                rows = [r for r in rebuild_summary(self.root / b['path']) if r['kind'] == 'scan' and r['recording_complete'] and r['label'] != 'invalid']
+                # Compare only matching bottle/offset cells across gains below.
+                gain_scores.setdefault(gain, []).extend(rows)
+            chosen_gain = 1.; selection = 'default; no comparable prospective gain evidence'
+            if gain_scores:
+                common = set.intersection(*[{(r['bottle'], r['delta_mm']) for r in rows} for rows in gain_scores.values()])
+                if common:
+                    def score(g):
+                        rows = [r for r in gain_scores[g] if (r['bottle'], r['delta_mm']) in common]
+                        cells = [[r for r in rows if (r['bottle'], r['delta_mm']) == key] for key in common]
+                        return (float(np.mean([np.mean([r['success'] for r in cell]) for cell in cells])),
+                                -float(np.mean([np.mean([r['regrasps'] for r in cell]) for cell in cells])))
+                    chosen_gain = max(gain_scores, key=score); selection = 'prospective B: equal-weight matched bottle/offset cells; success then fewer regrasps'
+        stop_snapshot = None
+        if self.agent_planning():
+            stop_snapshot = self.stop_evidence(report)
+            evidence = stop_snapshot['B_evidence']
+            chosen_gain = evidence['chosen_gain']
+            if chosen_gain is None:
+                allowed = self.settings['policy']['gains']
+                chosen_gain = 1. if 1. in allowed else allowed[-1]
+                selection = 'provisional default: no gain has complete prospective B coverage'
+            else:
+                selection = ('current-model same-gain fixed-offset balanced prospective B; ' +
+                             ('criteria met' if evidence['eligible'] else 'provisional; criteria not met'))
+            if trigger == 'agent' and not stop_snapshot['eligible']:
+                raise ValueError('Agent 请求冻结但数值停止条件未满足')
         self.state['frozen'] = {'model_id': model['model_id'], 'policy': {'gain': chosen_gain},
             'reason': reason, 'mapping_eligible': bool(report.get('stopping_eligible')), 'selection': selection,
+            'freeze_trigger': trigger,
+            'exploration_eligible': stop_snapshot['eligible'] if stop_snapshot else None,
+            'stop_evidence': stop_snapshot,
             'design': copy.deepcopy(self.state.get('design')),
             'validation_offsets_mm': validation_offsets(self.settings, self.state.get('design')),
             'training_sessions': self.training_sessions(), 'created_unix_ns': time.time_ns()}
         atomic_json(self.root / 'frozen.json', self.state['frozen'])
         self.state.update(phase='validation', status='running'); self.save()
+
+    def recheck_agent_plan(self, candidate, remaining):
+        from .agentic_planning import validate_plan_response
+        number = candidate.get('decision_number')
+        if isinstance(number, bool) or not isinstance(number, int) or number < 1:
+            raise ValueError('Agent 计划缺少已保存的决策记录')
+        prefix = self.root / 'decisions' / f'{number:04d}'
+        context = json.loads(Path(str(prefix) + '_input.json').read_text())
+        saved = json.loads(Path(str(prefix) + '_validated_plan.json').read_text())
+        if candidate != saved:
+            raise ValueError('Agent 计划在校验后被修改；拒绝执行')
+        checked = validate_plan_response(candidate['proposal'], settings=self.settings, cfg=self.cfg,
+            design=self.state.get('design'), approved_models={k: self.model(k) for k in self.state['models']},
+            remaining_trials=remaining, context=context, round_index=len(self.state['batches']),
+            T0=self.state['context'].get('T0'))
+        if checked is None or checked != {k: v for k, v in candidate.items() if k != 'decision_number'}:
+            raise ValueError('Agent 计划与当前状态不一致，需重新制定计划')
+        return checked['design_next']
 
     def prepare_batch(self, candidate, validation=False):
         if not validation and self.state['phase'] != 'explore':
@@ -496,7 +701,12 @@ class Campaign:
         else:
             remaining = self.settings['budget']['max_trials'] - self._spent() - self.state['validation_reserved_trials']
             validate_candidate(candidate, self.settings, self.cfg, remaining, self.state['models'])
-            transition = validate_design_transition(candidate, self.settings, before)
+            if candidate.get('origin') == 'agent_proposal':
+                if not self.agent_planning(): raise ValueError('旧 campaign 不能静默改为 Agent 自拟模式')
+                transition = self.recheck_agent_plan(candidate, remaining)
+            else:
+                if self.agent_planning(): raise ValueError('Agent 自拟模式只能执行经过校验并保存的完整提案')
+                transition = validate_design_transition(candidate, self.settings, before)
             if transition is not None: after = {**(before or {}), **transition}
         plan = make_plan(candidate, self.cfg, seed=self.settings['seed'] + index, validation=validation)
         if self._spent() + len(plan) > self.settings['budget']['max_trials']:
@@ -588,10 +798,12 @@ class Campaign:
                    'inconclusive': '验证证据不足，不能宣称通过', 'invalid': '验证记录不满足协议，不能用于验收'}.get(validation.get('outcome'), '独立验证尚未完成')
         lines = ['# Agentic 实验报告', '', f"状态：{s['status']}",
                  f"模式：{'模拟（不能作为实机结论）' if self.settings.get('simulate') else '实机'}",
+                 f"计划方式：{'Agent 提交完整计划，本地校验' if self.agent_planning() else '旧版候选选择'}",
                  f"固定硬边界：{self.settings['scope']['min_mm']} 至 {self.settings['scope']['max_mm']} mm",
                  f"当前探索设计：{s.get('design') or self.settings['scope']}",
                  f"新增尝试/预算（含监测、中断和跳过）：{self._spent()}/{self.settings['budget']['max_trials']}",
                  f"停止原因：{s.get('stop_reason', s.get('last_error', '尚未结束'))}", '',
+                 f"冻结触发：{(s.get('frozen') or {}).get('freeze_trigger', '尚未冻结')}；探索停止条件满足：{(s.get('frozen') or {}).get('exploration_eligible')}",
                  f"结论：{outcome}。complete 只表示流程结束。",
                  f"留出映射：MAE={metrics.get('mae_mm')} mm；P90={metrics.get('p90_mm')} mm；范围覆盖={metrics.get('scope_covered')}。", '',
                  '## 批次与更新', '', '| 批次 | 阶段 | 条件 | 状态 | 理由 |', '|---|---|---|---|---|']
@@ -651,6 +863,7 @@ class Campaign:
         self.state['active_run_unix_ns'] = time.time_ns(); self.save()
         self.say('授权探索范围 ' + str(self.settings['scope']) + '；固定限幅和力控不由 agent 修改。')
         self.say('总预算包含独立验证预留 ' + str(self.state['validation_reserved_trials']) + ' 次；标签与换瓶仍由现场操作员完成。')
+        self.say('计划方式：' + ('Agent 自拟点位、次数和 A/B；本地校验，不受候选菜单限制。' if self.agent_planning() else '旧版：从本地候选中选择。'))
         try:
             while True:
                 if self.state.get('active_batch'):
@@ -675,7 +888,9 @@ class Campaign:
                 options = self.candidates(report); stop = self.stop_evidence(report, options)
                 spent = self._spent(); budget = self.settings['budget']
                 limit = len([b for b in self.state['batches'] if b['phase'] == 'explore']) >= budget['max_batches']
-                limit = limit or spent >= budget['max_trials'] - self.state['validation_reserved_trials']
+                minimum_batch = len(make_plan({'cond': 'A', 'cells': [{'offset_mm': 0., 'reps': 2}]},
+                                              self.cfg, seed=self.settings['seed']))
+                limit = limit or budget['max_trials'] - self.state['validation_reserved_trials'] - spent < minimum_batch
                 limit = limit or self.state['elapsed_s'] + time.monotonic() - started >= budget['max_seconds']
                 # Only distinct A updates count as learning plateaus. Repeated
                 # B-only evaluations cannot manufacture mapping convergence.
@@ -689,12 +904,15 @@ class Campaign:
                 if self.state['elapsed_s'] + time.monotonic() - started >= budget['max_seconds']:
                     self.state.update(status='budget_exhausted', stop_reason='总时间预算耗尽，未完成的独立验证不作成功结论')
                     self.save(); break
-                if limit or not options or plateau:
+                if limit or (not self.agent_planning() and (not options or plateau)):
                     reason = '连续 A 更新收益低，转入固定验证；不代表误差目标已经达到' if plateau else '探索预算已到或没有可执行的补采候选；不代表精度已经达到'
-                    self.freeze(report, reason)
+                    self.freeze(report, reason, trigger='budget' if limit else ('plateau' if plateau else 'no_candidates'))
                     if self.state['status'] in TERMINAL: break
                     continue
                 decision, chosen = self.decide(report, options, stop)
+                if self.state['elapsed_s'] + time.monotonic() - started >= budget['max_seconds']:
+                    self.state.update(status='budget_exhausted', stop_reason='制定计划期间总时间预算耗尽；未执行新计划')
+                    self.save(); break
                 if decision['action'] == 'pause':
                     self.state.update(status='paused', last_error=decision['reason']); self.save(); break
                 if decision['action'] == 'freeze': self.freeze(report, decision['reason']); continue
@@ -723,6 +941,7 @@ def parser():
         mode = q.add_mutually_exclusive_group(required=True)
         mode.add_argument('--real', action='store_true'); mode.add_argument('--simulate', action='store_true')
         q.add_argument('--provider', choices=['chatgpt', 'api', 'deterministic'])
+        q.add_argument('--planning', choices=['agent', 'candidate'], help='仅新 campaign：Agent 自拟完整计划或旧版候选选择')
         q.add_argument('--max-trials', type=int); q.add_argument('--max-batches', type=int)
         q.add_argument('--scope', nargs=2, type=float, metavar=('MIN_MM', 'MAX_MM'))
         q.add_argument('--approval', choices=['campaign', 'batch'])
@@ -758,7 +977,8 @@ def main(argv=None, *, input_fn=input, output=print, executor=None, provider=Non
         if args.command in ('status', 'analyze', 'plan', 'recover'):
             campaign = Campaign(root, ask=input_fn, say=output)
             if args.command == 'status':
-                output(json.dumps({k: campaign.state.get(k) for k in ('status', 'phase', 'active_batch', 'design', 'design_history', 'latest_metrics', 'frozen', 'last_error')}, ensure_ascii=False, indent=2))
+                output(json.dumps({'planning_mode': 'agent' if campaign.agent_planning() else 'candidate',
+                    **{k: campaign.state.get(k) for k in ('status', 'phase', 'active_batch', 'design', 'design_history', 'latest_metrics', 'frozen', 'last_error')}}, ensure_ascii=False, indent=2))
             elif args.command == 'recover': campaign.acknowledge_recovery()
             else:
                 report = campaign.analyze()
@@ -767,19 +987,24 @@ def main(argv=None, *, input_fn=input, output=print, executor=None, provider=Non
                     campaign.finish_validation()
                 else:
                     campaign.write_report()
-                if args.command == 'plan': output(json.dumps(campaign.candidates(report), ensure_ascii=False, indent=2))
+                if args.command == 'plan':
+                    suggestions = campaign.candidates(report)
+                    view = (campaign.planning_context(report, suggestions, campaign.stop_evidence(report, suggestions))
+                            if campaign.agent_planning() else suggestions)
+                    output(json.dumps(view, ensure_ascii=False, indent=2))
                 else: output('报告：' + str(root / 'REPORT.md'))
             return 0
         if (root / 'campaign.json').exists():
             old = json.loads((root / 'campaign.json').read_text())['settings']
             if bool(args.simulate) != bool(old.get('simulate')): raise ValueError('不能将模拟 campaign 续跑为实机，或反向转换')
-            if any(getattr(args, k) is not None for k in ('seed_session', 'provider', 'max_trials', 'max_batches', 'scope', 'approval')):
+            if any(getattr(args, k) is not None for k in ('seed_session', 'provider', 'planning', 'max_trials', 'max_batches', 'scope', 'approval')):
                 raise ValueError('续跑只需 --out 和 --real/--simulate；不能覆盖已冻结的 campaign 设置')
             campaign = Campaign(root, ask=input_fn, say=output, executor=executor, provider=provider)
         else:
             s = load_settings(args.config); s['simulate'] = bool(args.simulate)
             if args.seed_session: s['seed_sessions'] = [str(x.expanduser().resolve()) for x in args.seed_session]
             if args.provider: s['provider']['backend'] = args.provider
+            if args.planning: s.setdefault('planning', {})['mode'] = args.planning
             if args.max_trials is not None: s['budget']['max_trials'] = args.max_trials
             if args.max_batches is not None: s['budget']['max_batches'] = args.max_batches
             if args.scope:

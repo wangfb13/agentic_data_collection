@@ -19,6 +19,7 @@ def settings():
     value = agentic.load_settings(agentic.ROOT / 'config.agentic.yaml')
     value['simulate'] = True
     value['provider']['backend'] = 'deterministic'
+    value['planning']['mode'] = 'candidate'
     value['scope'].update(min_mm=-2., max_mm=10., step_mm=2., adaptive=False)
     value['validation'].update(adaptive_scope=False, offsets_mm=[-2, 0, 2, 6, 10], reps=4)
     value['budget']['max_trials'] = 120
