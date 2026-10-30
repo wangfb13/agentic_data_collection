@@ -1,0 +1,11 @@
+.venv/
+.venv_robot/
+.deps/
+__pycache__/
+.pytest_cache/
+outputs/
+reports/
+measurements/
+station_profile_setup/
+station_profile.yaml
+*.pyc

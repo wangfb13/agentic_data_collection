@@ -1,0 +1,50 @@
+# Merge this block into a measured public ROS configuration only after deploying
+# and verifying the private host supervisor. It is intentionally NOT active.
+# No passwords, Docker socket mounting or original-controller edits are required.
+force:
+  controller: existing
+  target_definition: mean
+  unit: sdk
+  existing:
+    host_executor_argv: [TODO_verified_host_supervisor_argv]
+    # Example executor shape, once SSH and module path are verified:
+    # [ssh, 6f5090, env, PYTHONPATH=/home/dm/DM_das/bottle_grasp_experiment,
+    #  /home/dm/DM_das/bottle_grasp_experiment/.venv/bin/python,
+    #  -m, bottle_scan.existing_force, --host-supervisor]
+    source_path: /home/dm/DM_das/starvla-feat-sparky_x5_starvla/scripts/single_gripper_force_control.py
+    source_sha256: TODO_measured_original_source_SHA256
+    calibration_path: TODO_original_saved_image_reference_calibration_JSON
+    calibration_sha256: TODO_measured_calibration_SHA256
+    host_python: python3
+    report_dir: /home/dm/DM_das/bottle_grasp_experiment/outputs/existing_force
+    ros_master_uri: http://192.168.9.77:11311
+    ros_node_hosts: [192.168.9.57]
+    startup_timeout_s: 20.0
+    shutdown_timeout_s: 10.0
+    poll_s: 0.05
+    exit_stable_s: TODO_measured_exit_stability_window_s
+    exit_velocity_tolerance_mm_s: TODO_measured_opening_velocity_noise_mm_s
+    # These limits belong to original 39010 saved-reference force, in force.unit.
+    # force.max/contact_min/target_tolerance remain independent 39020 guard limits.
+    evaluation_probe_target: TODO_measured_39020_feedback_during_39010_PROBE
+    control_limits:
+      signal: SDK_1.2.11_saved_reference_39010
+      max: TODO_measured_39010_max_per_finger
+      contact_min: TODO_measured_39010_contact_per_finger
+      target_tolerance: TODO_measured_39010_target_band
+    cli_overrides:
+      position_min: 300
+      position_max: TODO_measured_allowed_normalized_times_1000
+      settle_time: 1.0
+      tactile_timeout: 2.0
+      position_timeout: 2.0
+      max_run_time: 120.0
+      max_pair_skew: 0.5
+      startup_timeout: 20.0
+      step: 1
+    # N mode additionally requires n_per_gf and n_conversion_evidence describing
+    # this existing saved-image/gauge calibration, not the independent 39020 stream.
+  validation:
+    # 39020 evaluation and 39010 control are different sources in SDK mode.
+    evaluation_target: TODO_explicit_39020_evaluation_target_not_inferred_from_39010
+    report_path: outputs/validation/force_existing_report.json

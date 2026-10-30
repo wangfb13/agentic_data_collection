@@ -1,0 +1,4 @@
+# Project .venv_robot uses --system-site-packages with the existing container
+# /root/miniconda3/envs/starvla/bin/python (3.12.13). ROS/message setup is sourced
+# by run_on_5090.sh. Do not install this into the original inference environment.
+h5py==3.16.0
