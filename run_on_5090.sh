@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTAINER="${BOTTLE_ROS_CONTAINER:-daimon_ros1_das}"
 COMMAND="${1:-doctor}"
 case "$COMMAND" in
+  agentic) SCRIPT_ARGS=(agentic.py) ;;
   e1e2) SCRIPT_ARGS=(e1e2.py) ;;
   analyze_e1e2|analyze-e1e2) SCRIPT_ARGS=(analyze_e1e2.py) ;;
   setup) SCRIPT_ARGS=(wizard.py setup) ;;
@@ -23,7 +24,7 @@ case "$COMMAND" in
   record-stress) SCRIPT_ARGS=(record_stress.py) ;;
   register-report) SCRIPT_ARGS=(register_validation.py) ;;
   python) SCRIPT_ARGS=() ;;
-  *) echo 'Usage: bash run_on_5090.sh e1e2|analyze_e1e2|setup|run|doctor|record-pose|move-tcp|prepare|stop-test|validate-force|opening-repeat|contact|visual|analyze|record-stress|register-report|python [arguments]' >&2; exit 2 ;;
+  *) echo 'Usage: bash run_on_5090.sh agentic|e1e2|analyze_e1e2|setup|run|doctor|record-pose|move-tcp|prepare|stop-test|validate-force|opening-repeat|contact|visual|analyze|record-stress|register-report|python [arguments]' >&2; exit 2 ;;
 esac
 if (( $# )); then shift; fi
 
@@ -38,6 +39,18 @@ if [[ -e /.dockerenv || -e /run/.containerenv ]]; then
   # interpret an inherited --help themselves; leave all legacy routes unchanged.
   if [[ "$COMMAND" == "analyze_e1e2" || "$COMMAND" == "analyze-e1e2" ]]; then
     exec "$python_bin" "${SCRIPT_ARGS[@]}" "$@"
+  fi
+  if [[ "$COMMAND" == "agentic" ]]; then
+    agentic_real=0
+    for agentic_arg in "$@"; do
+      if [[ "$agentic_arg" == "--real" ]]; then agentic_real=1; fi
+      if [[ "$agentic_arg" == "--help" || "$agentic_arg" == "-h" ]]; then
+        exec "$python_bin" "${SCRIPT_ARGS[@]}" "$@"
+      fi
+    done
+    if [[ "$agentic_real" == 0 ]]; then
+      exec "$python_bin" "${SCRIPT_ARGS[@]}" "$@"
+    fi
   fi
   if [[ "$COMMAND" == "e1e2" ]]; then
     for e1e2_arg in "$@"; do

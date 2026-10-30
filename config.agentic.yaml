@@ -1,0 +1,37 @@
+schema: agentic_campaign_config_v1
+base_config: config.e1e2.yaml
+seed_sessions: []
+provider:
+  backend: chatgpt
+  model: null
+  callback_port: 8766
+  login_timeout_s: 600
+  open_browser: false
+  request_timeout_s: 120
+  proxy: http://127.0.0.1:18082
+scope:
+  min_mm: -2.0
+  max_mm: 10.0
+  step_mm: 2.0
+  allow_expand: false
+budget:
+  max_trials: 120
+  max_batches: 10
+  max_seconds: 14400
+  batch_trials: 12
+learning:
+  min_per_level: 2
+  min_levels: 3
+  target_mae_mm: 1.0
+  target_p90_mm: 2.0
+  min_gain_mm: 0.1
+  plateau_batches: 2
+  min_B_batches: 1
+policy:
+  gains: [0.5, 0.75, 1.0]
+validation:
+  offsets_mm: [-2, 0, 2, 6, 10]
+  reps: 4
+  success_target: 0.8
+approval: campaign
+seed: 20261030

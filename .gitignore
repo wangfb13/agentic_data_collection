@@ -9,3 +9,8 @@ measurements/
 station_profile_setup/
 station_profile.yaml
 *.pyc
+.env
+.env.*
+.siwc-robot-probe/
+.bottle-agentic/
+account_*.json
