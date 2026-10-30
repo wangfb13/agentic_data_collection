@@ -51,6 +51,17 @@ def validate_settings(s):
     if not -25 <= lo < hi <= 25 or not lo <= 0 <= hi:
         raise ValueError('探索范围须包含零点并位于 [-25,25] mm')
     finite(scope['step_mm'], 'step_mm', True)
+    if scope.get('adaptive', False):
+        for key in ('adaptive', 'allow_expand'):
+            if key in scope and not isinstance(scope[key], bool): raise ValueError('scope.' + key + ' 必须是布尔值')
+        a = finite(scope.get('initial_min_mm', lo), 'initial_min_mm')
+        b = finite(scope.get('initial_max_mm', hi), 'initial_max_mm')
+        if not lo <= a < b <= hi or not a <= 0 <= b:
+            raise ValueError('初始范围必须包含0且位于固定硬边界内')
+        minimum = finite(scope.get('min_step_mm', .5), 'min_step_mm', True)
+        if minimum > scope['step_mm']: raise ValueError('min_step_mm 不能大于初始步长')
+        if finite(scope.get('expansion_step_mm', 5.), 'expansion_step_mm', True) > 5.:
+            raise ValueError('单轮扩展不能超过5 mm')
     for name in ('max_trials', 'max_batches', 'batch_trials'):
         v = s['budget'][name]
         if isinstance(v, bool) or not isinstance(v, int) or v < 1:
@@ -59,6 +70,12 @@ def validate_settings(s):
     v = s['validation']
     if not isinstance(v['reps'], int) or isinstance(v['reps'], bool) or v['reps'] < 2 or v['reps'] % 2:
         raise ValueError('validation.reps 必须为正偶数，轻重瓶各一半')
+    if v.get('adaptive_scope', False) and not scope.get('adaptive', False):
+        raise ValueError('动态验证范围需要 scope.adaptive')
+    if v.get('adaptive_scope', False):
+        points = v.get('points', 5)
+        if isinstance(points, bool) or not isinstance(points, int) or not 3 <= points <= 25:
+            raise ValueError('validation.points 必须为3至25的整数')
     if not v.get('offsets_mm') or len(set(v['offsets_mm'])) != len(v['offsets_mm']):
         raise ValueError('验证偏移列表为空或重复')
     for d in v['offsets_mm']:
@@ -141,10 +158,68 @@ def make_plan(candidate, cfg, *, seed, validation=False):
     return with_monitors
 
 
-def validation_candidate(settings):
+def validation_offsets(settings, design=None):
+    if not settings['validation'].get('adaptive_scope', False):
+        return list(settings['validation']['offsets_mm'])
+    scope = settings['scope']
+    design = design or {'min_mm': scope.get('initial_min_mm', scope['min_mm']),
+                        'max_mm': scope.get('initial_max_mm', scope['max_mm'])}
+    lo, hi = float(design['min_mm']), float(design['max_mm'])
+    n = settings['validation'].get('points', 5)
+    points = sorted(set([round(float(x), 8) for x in np.linspace(lo, hi, n - 1)] + [0.]))
+    while len(points) < n:
+        a, b = max(zip(points, points[1:]), key=lambda pair: pair[1] - pair[0])
+        midpoint = round((a + b) / 2, 8)
+        if midpoint in points: raise ValueError('范围过窄，无法生成互异验证点')
+        points = sorted(points + [midpoint])
+    return points
+
+
+def validation_candidate(settings, design=None, offsets=None):
     return {'id': 'frozen-validation', 'cond': 'mixed', 'cells': [
-        {'offset_mm': d, 'reps': settings['validation']['reps']} for d in settings['validation']['offsets_mm']],
+        {'offset_mm': d, 'reps': settings['validation']['reps']} for d in (offsets if offsets is not None else validation_offsets(settings, design))],
         'reason': '固定独立验证；每个瓶子和偏移内 A/B 成对，随机先后顺序'}
+
+
+def validate_design_transition(candidate, settings, current):
+    """The supervisor selects a checked design; it cannot edit numeric limits."""
+    action = candidate.get('design_action', 'sample')
+    nxt = candidate.get('design_next')
+    if not settings['scope'].get('adaptive', False):
+        if nxt is not None or action != 'sample': raise ValueError('固定范围 campaign 不能改变设计')
+        return None
+    if current is None: raise ValueError('自适应设计尚未初始化')
+    if action not in ('sample', 'repeat', 'refine', 'expand_left', 'expand_right'):
+        raise ValueError('未知设计动作')
+    if nxt is None:
+        if action not in ('sample', 'repeat'): raise ValueError('设计动作缺少 design_next')
+        nxt = {k: current[k] for k in ('min_mm', 'max_mm', 'step_mm')}
+    if not isinstance(nxt, dict) or set(nxt) != {'min_mm', 'max_mm', 'step_mm'}:
+        raise ValueError('design_next 只能包含范围和步长')
+    nxt = {k: finite(v, 'design_next.' + k, k == 'step_mm') for k, v in nxt.items()}
+    lo, hi, step = (nxt[k] for k in ('min_mm', 'max_mm', 'step_mm'))
+    oldlo, oldhi, oldstep = (float(current[k]) for k in ('min_mm', 'max_mm', 'step_mm'))
+    scope = settings['scope']; minimum = scope.get('min_step_mm', .5)
+    if not scope['min_mm'] <= lo < hi <= scope['max_mm'] or not lo <= 0 <= hi or step < minimum:
+        raise ValueError('新设计超出硬边界或最小步长')
+    same = lambda a, b: abs(a - b) < 1e-8
+    if lo > oldlo + 1e-8 or hi < oldhi - 1e-8: raise ValueError('不能收缩范围以丢弃失败点')
+    if action == 'refine':
+        if not same(lo, oldlo) or not same(hi, oldhi) or not same(step, max(minimum, oldstep / 2)) or step >= oldstep:
+            raise ValueError('细化只能在原范围内减半步长，到最小步长为止')
+    elif action.startswith('expand_'):
+        if not scope.get('allow_expand', False) or not same(step, oldstep): raise ValueError('本轮不允许此扩展')
+        growth = oldlo - lo if action == 'expand_left' else hi - oldhi
+        other_same = same(hi, oldhi) if action == 'expand_left' else same(lo, oldlo)
+        if not other_same or not 0 < growth <= min(5., scope.get('expansion_step_mm', 5.)) + 1e-8:
+            raise ValueError('一次只能按上限向单侧扩展')
+        if not any((cell['offset_mm'] < oldlo if action == 'expand_left' else cell['offset_mm'] > oldhi) for cell in candidate['cells']):
+            raise ValueError('扩展计划没有新增范围内的测点')
+    elif not all(same(nxt[k], current[k]) for k in nxt):
+        raise ValueError('普通补采不能隐式改变范围或步长')
+    if any(not lo <= finite(c['offset_mm'], '设计点') <= hi for c in candidate['cells']):
+        raise ValueError('候选点超出本批设计范围')
+    return nxt
 
 
 def validate_candidate(candidate, settings, cfg, remaining, approved_models):
@@ -238,6 +313,7 @@ class Campaign:
                 'seeds': seeds, 'seed_manifest': source_manifest(seeds), 'batches': [], 'models': {},
                 'active_batch': None, 'created_unix_ns': time.time_ns(), 'elapsed_s': 0.,
                 'validation_reserved_trials': reserve, 'history': [], 'decisions': [], 'frozen': None,
+                'design': None, 'design_history': [],
                 'hardware_config_manifest': self.hardware_manifest(cfg, settings)}
             self.save()
         self.settings = self.state['settings']; self.cfg = self.state['base_config']
@@ -263,9 +339,26 @@ class Campaign:
         return self.state['seeds'] + [str(self.root / b['path']) for b in self.state['batches']
             if b['phase'] == 'explore' and (self.root / b['path'] / 'session_meta.json').exists()]
 
+    def effective_settings(self):
+        from .agentic_design import enabled, effective_settings
+        if enabled(self.settings) and self.state.get('design'):
+            return effective_settings(self.settings, self.state['design'])
+        return self.settings
+
+    def frozen_validation_candidate(self):
+        frozen = self.state.get('frozen') or {}
+        return validation_candidate(self.settings, frozen.get('design'), frozen.get('validation_offsets_mm'))
+
     def analyze(self):
         from .agentic_learning import analyze_sessions, write_plots
-        report = analyze_sessions(self.training_sessions(), self.settings)
+        from .agentic_design import enabled, initialize
+        report = analyze_sessions(self.training_sessions(), self.effective_settings())
+        if enabled(self.settings) and self.state.get('design') is None:
+            self.state['design'] = initialize(self.settings, report)
+            self.state.setdefault('design_history', []).append({'action': 'initialize', 'after': copy.deepcopy(self.state['design']),
+                'reason': self.state['design'].get('origin'), 'created_unix_ns': time.time_ns()})
+            self.save()
+            report = analyze_sessions(self.training_sessions(), self.effective_settings())
         for model in report.get('models', []):
             if not model.get('usable_for_B'): continue
             mid = model['model_id']
@@ -275,6 +368,8 @@ class Campaign:
             atomic_json(path, model)
             self.state['models'][mid] = str(path.relative_to(self.root))
         report['plots'] = write_plots(report, self.root / 'analysis' / 'plots')
+        report['design'] = self.state.get('design')
+        report['hard_scope_mm'] = [self.settings['scope']['min_mm'], self.settings['scope']['max_mm']]
         atomic_json(self.root / 'analysis' / 'latest.json', report)
         self.state['latest_metrics'] = report.get('metrics', {})
         self.save()
@@ -283,7 +378,7 @@ class Campaign:
     def model(self, mid):
         return json.loads((self.root / self.state['models'][mid]).read_text()) if mid else None
 
-    def stop_evidence(self, report):
+    def stop_evidence(self, report, candidates=None):
         best = report.get('best_model')
         tested = [b for b in self.state['batches'] if b['phase'] == 'explore' and b['status'] == 'complete'
                   and b['candidate'].get('cond') == 'B' and best and b.get('model_id') == best['model_id']]
@@ -293,24 +388,36 @@ class Campaign:
         b_rate = sum(r['success'] for r in prospective) / len(prospective) if prospective else None
         b_ok = b_rate is not None and b_rate >= self.settings['validation']['success_target']
         eligible = bool(report.get('stopping_eligible') and b_ok and len(tested) >= self.settings['learning'].get('min_B_batches', 1))
+        unresolved = [c['id'] for c in (candidates or []) if c.get('unresolved')]
+        eligible = eligible and not unresolved
         return {'eligible': eligible, 'mapping_eligible': bool(report.get('stopping_eligible')),
+                'unresolved_design_candidates': unresolved,
                 'B_batches_on_current_model': len(tested),
                 'B_exploratory_success_rate': b_rate,
                 'reason': '范围覆盖、留出误差和当前模型的 B 试验满足要求' if eligible else '需继续补充映射或当前版本 B 反馈'}
 
     def candidates(self, report):
         from .agentic_learning import propose_candidates
+        from .agentic_design import enabled, propose_adaptive
+        if self.state['phase'] != 'explore': return []
         remaining = self.settings['budget']['max_trials'] - self._spent() - self.state['validation_reserved_trials']
-        options = propose_candidates(report, self.settings, remaining, len(self.state['batches']))
+        options = propose_candidates(report, self.effective_settings(), remaining, len(self.state['batches']))
+        if enabled(self.settings):
+            options += propose_adaptive(report, self.settings, self.state['design'], remaining, len(self.state['batches']))
         valid = []; rejected = []
         for c in options:
             try:
                 validate_candidate(c, self.settings, self.cfg, remaining, self.state['models'])
+                validate_design_transition(c, self.settings, self.state.get('design'))
                 valid.append(c)
             except ValueError as exc:
                 rejected.append({'id': c.get('id'), 'reason': str(exc)})
-        atomic_json(self.root / 'analysis' / 'candidate_checks.json', {'accepted': valid, 'rejected': rejected, 'remaining_exploration_trials': remaining})
-        return sorted(valid, key=lambda c: c.get('score', 0.), reverse=True)
+        atomic_json(self.root / 'analysis' / 'candidate_checks.json', {'accepted': valid, 'rejected': rejected,
+            'design': self.state.get('design'), 'remaining_exploration_trials': remaining})
+        # Compare unresolved design questions before re-testing a model that an
+        # impending range/resolution update may replace. Scores inside each
+        # class rank equivalent research choices rather than batch-size sums.
+        return sorted(valid, key=lambda c: (not bool(c.get('unresolved')), -c.get('score', 0.)))
 
     def decide(self, report, candidates, stop):
         context = {'ranked_candidates': candidates,
@@ -318,6 +425,7 @@ class Campaign:
             'analysis': {k: report.get(k) for k in ('metrics', 'diagnostics', 'quality')},
             'stop': stop, 'history': self.state['history'][-6:],
             'constraints': {'scope': self.settings['scope'], 'budget': self.settings['budget'],
+                            'current_design': self.state.get('design'),
                             'remaining_trials': self.settings['budget']['max_trials'] - self._spent(),
                             'fixed_execution_config_sha256': fingerprint(self.cfg)}}
         number = len(self.state['decisions']) + 1
@@ -334,8 +442,10 @@ class Campaign:
                 self.provider = AgentProvider(self.settings['provider'])
             decision = self.provider.propose(context)
         chosen = validate_decision(decision, candidates, stop)
+        if chosen is not None: validate_design_transition(chosen, self.settings, self.state.get('design'))
         atomic_json(self.root / 'decisions' / f'{number:04d}_decision.json', decision)
         self.state['decisions'].append({'number': number, 'action': decision['action'], 'reason': decision['reason'], 'candidate_id': decision.get('candidate_id')})
+        self.state.pop('last_error', None)
         self.save(); self.say('Agent：' + decision['reason'])
         return decision, chosen
 
@@ -365,21 +475,42 @@ class Campaign:
                 chosen_gain = max(gain_scores, key=score); selection = 'prospective B: equal-weight matched bottle/offset cells; success then fewer regrasps'
         self.state['frozen'] = {'model_id': model['model_id'], 'policy': {'gain': chosen_gain},
             'reason': reason, 'mapping_eligible': bool(report.get('stopping_eligible')), 'selection': selection,
+            'design': copy.deepcopy(self.state.get('design')),
+            'validation_offsets_mm': validation_offsets(self.settings, self.state.get('design')),
             'training_sessions': self.training_sessions(), 'created_unix_ns': time.time_ns()}
         atomic_json(self.root / 'frozen.json', self.state['frozen'])
         self.state.update(phase='validation', status='running'); self.save()
 
     def prepare_batch(self, candidate, validation=False):
+        if not validation and self.state['phase'] != 'explore':
+            raise ValueError('模型已冻结，不能创建新的探索批次或改变设计')
         index = len(self.state['batches']) + 1
         fit_id = self.state['frozen']['model_id'] if validation else candidate.get('model_id')
         candidate = copy.deepcopy(candidate)
-        if validation: candidate['policy'] = self.state['frozen']['policy']
+        before = copy.deepcopy(self.state.get('design'))
+        after = before
+        if validation:
+            expected = self.frozen_validation_candidate()
+            if candidate['cells'] != expected['cells']: raise ValueError('验证点已冻结，不能更换')
+            candidate['policy'] = self.state['frozen']['policy']
+        else:
+            remaining = self.settings['budget']['max_trials'] - self._spent() - self.state['validation_reserved_trials']
+            validate_candidate(candidate, self.settings, self.cfg, remaining, self.state['models'])
+            transition = validate_design_transition(candidate, self.settings, before)
+            if transition is not None: after = {**(before or {}), **transition}
         plan = make_plan(candidate, self.cfg, seed=self.settings['seed'] + index, validation=validation)
         if self._spent() + len(plan) > self.settings['budget']['max_trials']:
             raise ValueError('剩余总预算不足以执行完整批次，不能裁切独立验证计划')
         batch = {'id': f'{index:04d}', 'path': f'batches/{index:04d}', 'phase': 'validation' if validation else 'explore',
-                 'candidate': candidate, 'plan': plan, 'model_id': fit_id, 'status': 'planned'}
+                 'candidate': candidate, 'plan': plan, 'model_id': fit_id, 'status': 'planned',
+                 'design_before': before, 'design_after': copy.deepcopy(after)}
         atomic_json(self.root / batch['path'] / 'batch_plan.json', batch)
+        if after != before:
+            self.state['design'] = after
+            self.state.setdefault('design_history', []).append({'batch': batch['id'], 'candidate_id': candidate['id'],
+                'action': candidate.get('design_action'), 'before': before, 'after': copy.deepcopy(after),
+                'reason': candidate['reason'], 'created_unix_ns': time.time_ns()})
+            self.say(f"探索设计更新：{before} → {after}；{candidate.get('design_action')}")
         self.state['batches'].append(batch); self.state['active_batch'] = batch['id']; self.save()
         return batch
 
@@ -440,11 +571,13 @@ class Campaign:
         roots = [str(self.root / b['path']) for b in self.state['batches'] if b['phase'] == 'validation' and b['status'] == 'complete']
         model = self.model(self.state['frozen']['model_id'])
         settings = copy.deepcopy(self.settings)
+        settings['validation']['offsets_mm'] = self.state['frozen'].get('validation_offsets_mm', settings['validation']['offsets_mm'])
         settings['validation']['frozen_gain'] = self.state['frozen']['policy']['gain']
         report = frozen_evaluation(roots, roots, model, settings)
         report['plots'] = write_plots(report, self.root / 'validation' / 'plots')
         atomic_json(self.root / 'validation' / 'report.json', report)
         self.state.update(status='complete', validation=report, stop_reason=self.state['frozen']['reason'])
+        self.state.pop('last_error', None)
         self.save(); self.write_report()
 
     def write_report(self):
@@ -455,7 +588,8 @@ class Campaign:
                    'inconclusive': '验证证据不足，不能宣称通过', 'invalid': '验证记录不满足协议，不能用于验收'}.get(validation.get('outcome'), '独立验证尚未完成')
         lines = ['# Agentic 实验报告', '', f"状态：{s['status']}",
                  f"模式：{'模拟（不能作为实机结论）' if self.settings.get('simulate') else '实机'}",
-                 f"范围：{self.settings['scope']['min_mm']} 至 {self.settings['scope']['max_mm']} mm",
+                 f"固定硬边界：{self.settings['scope']['min_mm']} 至 {self.settings['scope']['max_mm']} mm",
+                 f"当前探索设计：{s.get('design') or self.settings['scope']}",
                  f"新增尝试/预算（含监测、中断和跳过）：{self._spent()}/{self.settings['budget']['max_trials']}",
                  f"停止原因：{s.get('stop_reason', s.get('last_error', '尚未结束'))}", '',
                  f"结论：{outcome}。complete 只表示流程结束。",
@@ -463,6 +597,9 @@ class Campaign:
                  '## 批次与更新', '', '| 批次 | 阶段 | 条件 | 状态 | 理由 |', '|---|---|---|---|---|']
         for b in s['batches']:
             lines.append(f"| {b['id']} | {b['phase']} | {b['candidate']['cond']} | {b['status']} | {b['candidate']['reason'].replace('|','/')} |")
+        lines += ['', '## 范围与步长更新记录', '', '```json',
+                  json.dumps(s.get('design_history', []), ensure_ascii=False, indent=2), '```',
+                  '步长是计划间隔，实际分辨率由实测 TCP 和重复噪声判断。固定验证只支持所测点位的结论，不证明整个连续范围。']
         lines += ['', '## 留出映射误差', '', '```json', json.dumps(s.get('latest_metrics', {}), ensure_ascii=False, indent=2), '```',
                   '', '## 冻结后的独立验证', '', '探索期样本用于学习；验证结果不反馈到本轮模型。预算终止不等于达到精度目标。',
                   '', '```json', json.dumps(s.get('validation', {'status': '尚未完成'}), ensure_ascii=False, indent=2), '```',
@@ -522,30 +659,33 @@ class Campaign:
                     if self.state['status'] == 'paused' or self.state['status'] in TERMINAL: break
                     if b['phase'] == 'validation': self.finish_validation(); break
                     report = self.analyze()
-                    self.state['history'].append({'batch': b['id'], 'cond': b['candidate']['cond'], 'model_id': b.get('model_id'), 'metrics': report.get('metrics', {})})
+                    self.state['history'].append({'batch': b['id'], 'cond': b['candidate']['cond'], 'model_id': b.get('model_id'),
+                        'design': copy.deepcopy(self.state.get('design')), 'metrics': report.get('metrics', {})})
                     self.save()
                     continue
                 if self.state['phase'] == 'validation':
                     if any(b['phase'] == 'validation' and b['status'] == 'complete' for b in self.state['batches']):
                         self.finish_validation(); break
-                    self.prepare_batch(validation_candidate(self.settings), validation=True); continue
+                    self.prepare_batch(self.frozen_validation_candidate(), validation=True); continue
                 report = self.analyze()
                 blockers = report.get('quality', {}).get('blocking_reasons', [])
                 if blockers:
                     self.state.update(status='paused', last_error='数据质量阻止自动采集：' + '; '.join(map(str, blockers)))
                     self.save(); self.say(self.state['last_error']); break
-                options = self.candidates(report); stop = self.stop_evidence(report)
+                options = self.candidates(report); stop = self.stop_evidence(report, options)
                 spent = self._spent(); budget = self.settings['budget']
                 limit = len([b for b in self.state['batches'] if b['phase'] == 'explore']) >= budget['max_batches']
                 limit = limit or spent >= budget['max_trials'] - self.state['validation_reserved_trials']
                 limit = limit or self.state['elapsed_s'] + time.monotonic() - started >= budget['max_seconds']
                 # Only distinct A updates count as learning plateaus. Repeated
                 # B-only evaluations cannot manufacture mapping convergence.
-                updates = [h['metrics'].get('mae_mm') for h in self.state['history'] if h['cond'] == 'A']
+                updates = [h['metrics'].get('mae_mm') for h in self.state['history'] if h['cond'] == 'A'
+                           and h.get('design') == self.state.get('design')]
                 n = self.settings['learning']['plateau_batches']
                 recent = updates[-(n+1):]
                 plateau = (len(recent) == n+1 and all(v is not None for v in recent) and
                            all(abs(a-b) < self.settings['learning']['min_gain_mm'] for a,b in zip(recent,recent[1:])))
+                plateau = plateau and not any(c.get('unresolved') for c in options)
                 if self.state['elapsed_s'] + time.monotonic() - started >= budget['max_seconds']:
                     self.state.update(status='budget_exhausted', stop_reason='总时间预算耗尽，未完成的独立验证不作成功结论')
                     self.save(); break
@@ -618,7 +758,7 @@ def main(argv=None, *, input_fn=input, output=print, executor=None, provider=Non
         if args.command in ('status', 'analyze', 'plan', 'recover'):
             campaign = Campaign(root, ask=input_fn, say=output)
             if args.command == 'status':
-                output(json.dumps({k: campaign.state.get(k) for k in ('status', 'phase', 'active_batch', 'latest_metrics', 'frozen', 'last_error')}, ensure_ascii=False, indent=2))
+                output(json.dumps({k: campaign.state.get(k) for k in ('status', 'phase', 'active_batch', 'design', 'design_history', 'latest_metrics', 'frozen', 'last_error')}, ensure_ascii=False, indent=2))
             elif args.command == 'recover': campaign.acknowledge_recovery()
             else:
                 report = campaign.analyze()
@@ -644,7 +784,12 @@ def main(argv=None, *, input_fn=input, output=print, executor=None, provider=Non
             if args.max_batches is not None: s['budget']['max_batches'] = args.max_batches
             if args.scope:
                 s['scope'].update(min_mm=args.scope[0], max_mm=args.scope[1])
-                s['validation']['offsets_mm'] = sorted(set([args.scope[0], 0., args.scope[1]]))
+                if s['scope'].get('adaptive', False):
+                    s['scope']['initial_min_mm'] = max(args.scope[0], s['scope'].get('initial_min_mm', args.scope[0]))
+                    s['scope']['initial_max_mm'] = min(args.scope[1], s['scope'].get('initial_max_mm', args.scope[1]))
+                    s['validation']['offsets_mm'] = validation_offsets(s)
+                else:
+                    s['validation']['offsets_mm'] = sorted(set([args.scope[0], 0., args.scope[1]]))
             if args.approval: s['approval'] = args.approval
             validate_settings(s)
             campaign = Campaign(root, settings=s, ask=input_fn, say=output, executor=executor, provider=provider)

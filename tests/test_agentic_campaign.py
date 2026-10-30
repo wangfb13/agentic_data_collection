@@ -19,7 +19,26 @@ def settings():
     value = agentic.load_settings(agentic.ROOT / 'config.agentic.yaml')
     value['simulate'] = True
     value['provider']['backend'] = 'deterministic'
+    value['scope'].update(min_mm=-2., max_mm=10., step_mm=2., adaptive=False)
+    value['validation'].update(adaptive_scope=False, offsets_mm=[-2, 0, 2, 6, 10], reps=4)
+    value['budget']['max_trials'] = 120
     return value
+
+
+def adaptive_settings():
+    value = settings()
+    value['scope'].update(min_mm=-25., max_mm=25., adaptive=True, allow_expand=True,
+                          initial_min_mm=-2., initial_max_mm=10., step_mm=2.,
+                          min_step_mm=.5, expansion_step_mm=5.)
+    value['validation'].update(adaptive_scope=True, points=5)
+    return value
+
+
+def design_candidate(action='expand_right', *, design=None, offsets=(0., 10., 15.)):
+    return {'id': 'design-candidate', 'cond': 'A', 'reason': 'offline design test',
+            'policy': {'gain': 1.}, 'design_action': action,
+            'design_next': design or {'min_mm': -2., 'max_mm': 15., 'step_mm': 2.},
+            'cells': [{'offset_mm': x, 'reps': 2} for x in offsets], 'unresolved': True}
 
 
 def config():
@@ -314,6 +333,7 @@ class CampaignTests(unittest.TestCase):
 
     def test_mapping_stop_requires_successful_B_on_current_model(self):
         c = self.campaign()
+        self.model(c)
         report = {'best_model': {'model_id': 'm2'}, 'stopping_eligible': True}
         batch = c.prepare_batch(candidate('B', model_id='m1')); batch['status'] = 'complete'
         with patch('bottle_scan.e1e2.rebuild_summary', return_value=[
@@ -392,6 +412,207 @@ class CampaignTests(unittest.TestCase):
              patch.object(c, 'stop_evidence', return_value={'eligible': False}), \
              patch.object(c, 'decide', return_value=({'action': 'pause', 'reason': 'test'}, None)) as decide, \
              patch.object(c, 'freeze', side_effect=AssertionError('B is not new A evidence')):
+            self.assertEqual(c.run(), 0)
+        decide.assert_called_once()
+
+    def adaptive_campaign(self, **kwargs):
+        c = agentic.Campaign(self.root, settings=adaptive_settings(), say=lambda _: None, **kwargs)
+        c.state['design'] = {'min_mm': -2., 'max_mm': 10., 'step_mm': 2., 'origin': 'test'}
+        c.save()
+        return c
+
+    def test_legacy_snapshot_missing_adaptive_design_keeps_fixed_behavior(self):
+        c = self.campaign()
+        c.state['settings']['scope'].pop('adaptive', None)
+        c.state['settings']['validation'].pop('adaptive_scope', None)
+        c.state.pop('design'); c.state.pop('design_history'); c.save()
+        resumed = agentic.Campaign(self.root, say=lambda _: None)
+        self.assertEqual(resumed.effective_settings()['scope']['min_mm'], -2.)
+        self.assertEqual(agentic.validation_offsets(resumed.settings), [-2, 0, 2, 6, 10])
+        self.assertIsNone(agentic.validate_design_transition(candidate(), resumed.settings, None))
+        with self.assertRaisesRegex(ValueError, '固定范围'):
+            agentic.validate_design_transition(design_candidate(), resumed.settings, None)
+
+    def test_adaptive_initialization_only_once_and_saved_effective_scope(self):
+        c = agentic.Campaign(self.root, settings=adaptive_settings(), say=lambda _: None)
+        report = {'models': [], 'metrics': {}, 'quality': {}, 'evidence': {}}
+        initialized = {'min_mm': -10., 'max_mm': 10., 'step_mm': 5., 'origin': 'measured_A_seed_levels'}
+        with patch('bottle_scan.agentic_learning.analyze_sessions', return_value=report) as analyze, \
+             patch('bottle_scan.agentic_learning.write_plots', return_value=[]), \
+             patch('bottle_scan.agentic_design.initialize', return_value=initialized) as init:
+            c.analyze(); c.analyze()
+        init.assert_called_once(); self.assertEqual(analyze.call_count, 3)
+        self.assertEqual(c.state['design'], initialized)
+        self.assertEqual(len(c.state['design_history']), 1)
+        resumed = agentic.Campaign(self.root)
+        effective = resumed.effective_settings()['scope']
+        self.assertEqual((effective['min_mm'], effective['max_mm'], effective['step_mm']), (-10., 10., 5.))
+        self.assertEqual((resumed.settings['scope']['min_mm'], resumed.settings['scope']['max_mm']), (-25., 25.))
+
+    def test_legal_refine_and_single_side_expansion_transitions(self):
+        s = adaptive_settings(); current = {'min_mm': -2., 'max_mm': 10., 'step_mm': 2.}
+        self.assertEqual(agentic.validate_design_transition(design_candidate(), s, current),
+                         {'min_mm': -2., 'max_mm': 15., 'step_mm': 2.})
+        refined = {'min_mm': -2., 'max_mm': 10., 'step_mm': 1.}
+        self.assertEqual(agentic.validate_design_transition(
+            design_candidate('refine', design=refined, offsets=(-1., 1.)), s, current), refined)
+        current['step_mm'] = .75
+        refined['step_mm'] = .5
+        self.assertEqual(agentic.validate_design_transition(
+            design_candidate('refine', design=refined, offsets=(-1., 1.)), s, current), refined)
+        left = {'min_mm': -7., 'max_mm': 10., 'step_mm': .75}
+        self.assertEqual(agentic.validate_design_transition(
+            design_candidate('expand_left', design=left, offsets=(-7., -2.)), s, current), left)
+
+    def test_invalid_design_transition_rejected_without_state_change(self):
+        c = self.adaptive_campaign()
+        initial = copy.deepcopy(c.state)
+        cases = [
+            design_candidate(design={'min_mm': -2., 'max_mm': 16., 'step_mm': 2.}),
+            design_candidate(design={'min_mm': -3., 'max_mm': 15., 'step_mm': 2.}),
+            design_candidate(design={'min_mm': -2., 'max_mm': 26., 'step_mm': 2.}),
+            design_candidate(design={'min_mm': -2., 'max_mm': 15., 'step_mm': 1.}),
+            design_candidate(design={'min_mm': -2., 'max_mm': float('nan'), 'step_mm': 2.}),
+            design_candidate(design={'min_mm': -2., 'max_mm': True, 'step_mm': 2.}),
+            design_candidate(design={'min_mm': -2., 'max_mm': 15., 'step_mm': 2., 'force_target': 100}),
+            design_candidate('refine', design={'min_mm': -2., 'max_mm': 10., 'step_mm': .5}, offsets=(0.,)),
+            design_candidate('refine', design={'min_mm': -2., 'max_mm': 10., 'step_mm': .1}, offsets=(0.,)),
+            design_candidate('sample', design={'min_mm': -2., 'max_mm': 15., 'step_mm': 2.}),
+            design_candidate('repeat', design={'min_mm': 0., 'max_mm': 10., 'step_mm': 2.}, offsets=(0.,)),
+            design_candidate(offsets=(0., 10.)),
+            design_candidate(offsets=(0., 20.)),
+        ]
+        for proposal in cases:
+            with self.subTest(proposal=proposal), self.assertRaises(ValueError):
+                c.prepare_batch(proposal)
+            self.assertEqual(c.state, initial)
+
+    def test_refinement_below_minimum_and_disabled_expansion_rejected(self):
+        s = adaptive_settings(); current = {'min_mm': -2., 'max_mm': 10., 'step_mm': .5}
+        with self.assertRaisesRegex(ValueError, '细化'):
+            agentic.validate_design_transition(design_candidate('refine', design=current, offsets=(0.,)), s, current)
+        s['scope']['allow_expand'] = False; current['step_mm'] = 2.
+        with self.assertRaisesRegex(ValueError, '扩展'):
+            agentic.validate_design_transition(design_candidate(), s, current)
+
+    def test_design_update_committed_with_batch_and_not_reapplied_after_q(self):
+        execute = Mock(return_value={'complete': False, 'quit': True, 'context': {}})
+        c = self.adaptive_campaign(executor=execute)
+        hard_scope = copy.deepcopy(c.settings['scope'])
+        batch = c.prepare_batch(design_candidate())
+        saved = json.loads(c.path.read_text())
+        self.assertEqual(saved['active_batch'], batch['id'])
+        self.assertEqual(saved['design']['max_mm'], 15.)
+        self.assertEqual(saved['batches'][0]['design_before']['max_mm'], 10.)
+        self.assertEqual(saved['batches'][0]['design_after']['max_mm'], 15.)
+        self.assertEqual(len(saved['design_history']), 1)
+        c.execute(batch)
+        resumed = agentic.Campaign(self.root, executor=execute, say=lambda _: None)
+        resumed.execute(resumed.state['batches'][0])
+        self.assertEqual(resumed.state['design']['max_mm'], 15.)
+        self.assertEqual(len(resumed.state['design_history']), 1)
+        self.assertEqual(resumed.settings['scope'], hard_scope)
+
+    def test_budget_failure_does_not_commit_adaptive_design(self):
+        c = self.adaptive_campaign()
+        previous = c.prepare_batch(candidate())
+        for i in range(72):
+            atomic_json(c.root / previous['path'] / f'interrupted/{i:04d}/meta.json', {})
+        before = copy.deepcopy(c.state)
+        with self.assertRaisesRegex(ValueError, '预算'):
+            c.prepare_batch(design_candidate())
+        self.assertEqual(c.state, before)
+        self.assertEqual(c.state['design']['max_mm'], 10.)
+
+    def test_agent_cannot_override_whitelisted_candidates_design(self):
+        c = self.adaptive_campaign()
+        proposal = design_candidate()
+        valid = {'action': 'select_batch', 'candidate_id': proposal['id'], 'reason': 'test'}
+        chosen = agentic.validate_decision(valid, [proposal], {'eligible': False})
+        self.assertIs(chosen, proposal)
+        with self.assertRaisesRegex(ValueError, '未授权'):
+            agentic.validate_decision({**valid, 'design_next': proposal['design_next']}, [proposal], {'eligible': False})
+        with patch('bottle_scan.agentic_learning.propose_candidates', return_value=[]), \
+             patch('bottle_scan.agentic_design.propose_adaptive', return_value=[proposal]):
+            self.assertEqual(c.candidates({}), [proposal])
+
+    def test_adaptive_validation_points_always_unique_include_zero_and_endpoints(self):
+        s = adaptive_settings()
+        for lo, hi in [(-2., 10.), (-25., 25.), (0., 10.), (-10., 0.), (-.5, .5), (-.5, 25.)]:
+            with self.subTest(lo=lo, hi=hi):
+                offsets = agentic.validation_offsets(s, {'min_mm': lo, 'max_mm': hi, 'step_mm': .5})
+                self.assertEqual(len(offsets), 5); self.assertEqual(len(set(offsets)), 5)
+                self.assertEqual(offsets[0], lo); self.assertEqual(offsets[-1], hi); self.assertIn(0., offsets)
+                plan = agentic.make_plan(agentic.validation_candidate(s, offsets=offsets), config(), seed=1, validation=True)
+                self.assertEqual(len(plan), 44)
+
+    def test_validation_reserve_uses_actual_reps_and_monitor_frequency(self):
+        s = adaptive_settings(); s['validation']['reps'] = 2
+        cfg = config(); cfg['design']['zero_every'] = 5
+        with patch('bottle_scan.agentic.resolve_base', return_value=cfg):
+            c = agentic.Campaign(self.root, settings=s, say=lambda _: None)
+        self.assertEqual(c.state['validation_reserved_trials'], 24)
+
+    def test_freeze_locks_final_design_points_and_analysis_does_not_change_them(self):
+        c = self.adaptive_campaign(); model = self.model(c)
+        c.state['design'].update(min_mm=-7., max_mm=15., step_mm=1.)
+        c.freeze({'best_model': model, 'stopping_eligible': False}, 'budget reached')
+        frozen = copy.deepcopy(c.state['frozen'])
+        points = frozen['validation_offsets_mm']
+        self.assertEqual((points[0], points[-1]), (-7., 15.))
+        with patch('bottle_scan.agentic_learning.analyze_sessions', return_value={'models': [], 'metrics': {}}), \
+             patch('bottle_scan.agentic_learning.write_plots', return_value=[]):
+            c.analyze()
+        self.assertEqual(c.state['frozen'], frozen)
+        self.assertEqual(c.candidates({}), [])
+        resumed = agentic.Campaign(self.root)
+        self.assertEqual([x['offset_mm'] for x in resumed.frozen_validation_candidate()['cells']], points)
+        changed = resumed.frozen_validation_candidate(); changed['cells'][0]['offset_mm'] += 1.
+        with self.assertRaisesRegex(ValueError, '验证点已冻结'):
+            resumed.prepare_batch(changed, validation=True)
+
+    def test_final_evaluation_uses_frozen_points_not_initial_or_current_range(self):
+        c = self.adaptive_campaign(); model = self.model(c)
+        c.state['design'].update(min_mm=-7., max_mm=15., step_mm=1.)
+        c.freeze({'best_model': model, 'stopping_eligible': False}, 'test')
+        points = c.state['frozen']['validation_offsets_mm']
+        with patch('bottle_scan.agentic_learning.frozen_evaluation', return_value={'outcome': 'inconclusive'}) as evaluate, \
+             patch('bottle_scan.agentic_learning.write_plots', return_value=[]):
+            c.finish_validation()
+        self.assertEqual(evaluate.call_args.args[3]['validation']['offsets_mm'], points)
+        self.assertEqual(c.state['status'], 'complete')
+
+    def test_unresolved_design_candidate_blocks_learning_stop(self):
+        c = self.adaptive_campaign(); model = self.model(c)
+        batch = c.prepare_batch(candidate('B', model_id='m1')); batch['status'] = 'complete'
+        report = {'best_model': model, 'stopping_eligible': True}
+        rows = [dict(kind='scan', complete=True, recording_complete=True, label='normal', success=True)]
+        with patch('bottle_scan.e1e2.rebuild_summary', return_value=rows):
+            self.assertTrue(c.stop_evidence(report, [])['eligible'])
+            stop = c.stop_evidence(report, [design_candidate()])
+        self.assertFalse(stop['eligible'])
+        self.assertEqual(stop['unresolved_design_candidates'], ['design-candidate'])
+
+    def test_A_plateaus_from_different_designs_do_not_stop_new_design(self):
+        c = self.adaptive_campaign()
+        old = {'min_mm': -2., 'max_mm': 5., 'step_mm': 2.}
+        c.state['history'] = [{'cond': 'A', 'design': old, 'metrics': {'mae_mm': .2}} for _ in range(4)]
+        report = {'quality': {'blocking_reasons': []}, 'metrics': {}}
+        with patch.object(c, 'analyze', return_value=report), patch.object(c, 'candidates', return_value=[candidate()]), \
+             patch.object(c, 'stop_evidence', return_value={'eligible': False}), \
+             patch.object(c, 'decide', return_value=({'action': 'pause', 'reason': 'test'}, None)) as decide, \
+             patch.object(c, 'freeze', side_effect=AssertionError('new design has no plateau evidence')):
+            self.assertEqual(c.run(), 0)
+        decide.assert_called_once()
+
+    def test_unresolved_candidate_prevents_same_design_plateau_stop(self):
+        c = self.adaptive_campaign()
+        c.state['history'] = [{'cond': 'A', 'design': copy.deepcopy(c.state['design']), 'metrics': {'mae_mm': .2}} for _ in range(4)]
+        report = {'quality': {'blocking_reasons': []}, 'metrics': {}}
+        with patch.object(c, 'analyze', return_value=report), patch.object(c, 'candidates', return_value=[design_candidate()]), \
+             patch.object(c, 'stop_evidence', return_value={'eligible': False}), \
+             patch.object(c, 'decide', return_value=({'action': 'pause', 'reason': 'test'}, None)) as decide, \
+             patch.object(c, 'freeze', side_effect=AssertionError('unresolved refinement')):
             self.assertEqual(c.run(), 0)
         decide.assert_called_once()
 

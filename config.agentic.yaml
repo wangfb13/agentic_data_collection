@@ -10,10 +10,17 @@ provider:
   request_timeout_s: 120
   proxy: http://127.0.0.1:18082
 scope:
-  min_mm: -2.0
-  max_mm: 10.0
+  adaptive: true
+  # Immutable execution envelope; the agent changes its working range within it.
+  min_mm: -25.0
+  max_mm: 25.0
+  # Cold-start fallback only; compatible measured A data determines the start.
+  initial_min_mm: -2.0
+  initial_max_mm: 10.0
   step_mm: 2.0
-  allow_expand: false
+  min_step_mm: 0.5
+  expansion_step_mm: 5.0
+  allow_expand: true
 budget:
   max_trials: 120
   max_batches: 10
@@ -30,6 +37,9 @@ learning:
 policy:
   gains: [0.5, 0.75, 1.0]
 validation:
+  adaptive_scope: true
+  points: 5
+  # Legacy fallback; adaptive campaigns freeze 5 points in their final range.
   offsets_mm: [-2, 0, 2, 6, 10]
   reps: 4
   success_target: 0.8
