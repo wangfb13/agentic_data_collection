@@ -955,6 +955,11 @@ def parser():
 
 
 def main(argv=None, *, input_fn=input, output=print, executor=None, provider=None):
+    import sys
+    actual_argv = list(sys.argv[1:] if argv is None else argv)
+    if actual_argv[:1] == ['rsi']:
+        from .rsi import main as rsi_main
+        return rsi_main(actual_argv[1:], input_fn=input_fn, output=output, executor=executor)
     args = parser().parse_args(argv)
     lock = None
     try:

@@ -421,6 +421,10 @@ class Runner:
             s=self.hw.snapshot();decision=self.correction.decide(status,probe['descriptors'] if probe else [],self.bilateral(s))
             row={'attempt':attempt,'status':status,**decision,'timestamp_ns':self.hw.now()};history.append(row)
             self.current['correction_history']=history;self.save()
+            if decision.get('rejected'):
+                # A learned policy may abstain. Do not turn abstention into a
+                # zero-length regrasp or continue squeezing/lifting.
+                exhausted=True;status='policy_rejected';probe=None;break
             if decision['accepted']:break
             if attempt>=self.cfg['servo']['max_regrasps']:
                 exhausted=True;break

@@ -24,6 +24,9 @@ from .session import atomic_json, fingerprint, plain
 def _correction(fit, settings):
     if not isinstance(fit, dict):
         raise ValueError('条件 B 需要有效且已冻结的触觉模型')
+    if fit.get('schema') == 'contact_policy_v1':
+        from .contact_policy import ContactPolicy
+        return ContactPolicy(fit, settings)
     if fit and fit.get('schema') == 'agentic_fit_v1':
         from .agentic_learning import AgenticCorrection
         return AgenticCorrection(fit, settings)

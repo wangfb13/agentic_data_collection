@@ -149,6 +149,10 @@ def execute_simulated_batch(root, plan, cfg, fit, context, *, ask=input, say=pri
                     decision = correction.decide(status, probe['descriptors'] if probe else [], status == 'contact')
                     event = {'attempt': attempt, 'status': status, 'timestamp_ns': clock, **decision}
                     history.append(event)
+                    if decision.get('rejected'):
+                        status, probe = 'policy_rejected', None
+                        row['servo_exhausted'] = True
+                        break
                     if decision['accepted']:
                         break
                     if attempt >= cfg['servo']['max_regrasps']:

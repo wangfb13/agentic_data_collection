@@ -199,6 +199,12 @@ def describe(dd,reference,cfg):
         angle=float((np.degrees(np.arctan2(major[1],major[0]))+90)%180-90) if eig[-1]-eig[0]>1e-5*max(eig[-1],1.) else None
     out.update(bbox_xyxy_px=bbox,edge_sides=sides,touches_edge=any(sides.values()),
         principal_angle_deg=angle,shape_hw=[h,w],valid=out['area_px']>=t['min_area_px'] and out['centroid_px'] is not None)
+    # Compact optional ContactPolicy input, with no change to existing contact
+    # geometry or threshold decisions. Store numerical means, not image bytes.
+    if min(h,w)>=4:
+        positive=np.maximum(v-r,0.)
+        out['dd_pool_4x4']=[[float(block.mean()) for block in np.array_split(row,4,axis=1)]
+                            for row in np.array_split(positive,4,axis=0)]
     return out
 
 

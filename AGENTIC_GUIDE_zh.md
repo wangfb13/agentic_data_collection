@@ -1,5 +1,7 @@
 # Agentic 主动采集：怎么用、会做什么
 
+需要“从上次改进经验中更新下一次采集方法、训练 ContactPolicy 并对照验证”时，请使用独立的 [RSI 操作指南](docs/RSI_GUIDE_zh.md)。新入口为 `rsi`（也可 `agentic rsi`），使用新输出目录并复用兼容的旧种子；本文 `agentic run/resume` 的行为不被静默替换。方法能力与证据边界见 [RSI 设计说明](docs/RSI_DESIGN.md)。
+
 这是独立入口 `agentic`，复用 E1/E2 的实机执行器。原来的 `e1e2`、`analyze_e1e2`、`setup/run` 命令保持原样。无需重新完成 station_profile。
 
 新建 campaign 默认使用 **`planning.mode: agent`**：Agent 直接提出下一批的 A/B 条件、每个 a 轴偏移以及各点次数，并说明要验证的假设、证据和预期结果。它可以使用非均匀点位；本地生成的建议只作参考，不是必须从中选一个的白名单，也不强制取中点或把间隔减半。
