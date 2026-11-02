@@ -306,7 +306,7 @@ class Runner:
                 first_command=motion.get('first_command_ns')
                 changed_command=motion.get('target_changed_ns',first_command)
                 if s['width']<start_width-self.cfg['gripper']['stall_epsilon_normalized']:responded=True
-                if self.bilateral(s):self.hw.pause_probe();status='contact';break
+                if self.bilateral(s) and motion.get('mode')!='handoff_wait':self.hw.pause_probe();status='contact';break
                 if s['width']<=self.cfg['gripper']['min_normalized']+1e-6:
                     self.hw.hold();status='no_contact';floor_time=time.monotonic();floor_stamp=s['width_stamp']
                     # Give force frames received after the floor feedback a

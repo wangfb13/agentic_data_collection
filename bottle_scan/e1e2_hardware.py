@@ -36,6 +36,8 @@ class NormalizedGripper(RosNormalizedGripperObserver):
         self._position_request=None;self._first_position_command_ns=None
         self._position_target=None;self._position_target_changed_ns=None
         self._slow_close_tracking=False
+        self._previous_close_was_fast=False;self._fast_handoff_ns=None
+        self._handoff_wait=None;self._handoff_recovery_used=False
         self._recontact_deadline_ns=None;self._recontact_contact_since_ns=None;self._recontact_stable=False;self._recontact_last_loss_ns=None
         self._last_sent_value=None;self._last_sent_kind=None;self._probe_force=False;self._fast_close_cancelled=False
     def _event(self,stream,data,stamp,metadata):
@@ -80,11 +82,12 @@ class NormalizedGripper(RosNormalizedGripperObserver):
             'fast_close_cancelled':self._fast_close_cancelled,
             'position_feedback_tolerance_counts':g.get('position_feedback_tolerance_counts',1),
             'position_max_tracking_error_counts':g.get('position_max_tracking_error_counts',2),
-            'slow_close_tracking':self._slow_close_tracking})
+            'slow_close_tracking':self._slow_close_tracking,
+            'handoff_wait':copy.deepcopy(self._handoff_wait)})
     def hold(self):
         with self.control_lock:
             self.mode='hold';self.goal=None;self.force_target=None;self._recontact_deadline_ns=None
-            self._probe_force=False;self._recontact_stable=False
+            self._probe_force=False;self._recontact_stable=False;self._handoff_wait=None
             s=self.fresh()
             # Holding an actual position slightly below a bound must not close
             # further. Transport cancellation records the unchanged observation.
@@ -104,6 +107,8 @@ class NormalizedGripper(RosNormalizedGripperObserver):
         self._publish(self._preserve_probe_target(actual,actual),kind)
     def pause_probe(self):
         with self.control_lock:
+            if self._handoff_wait is not None:
+                raise RuntimeError('快慢闭合切换的反馈仍在核对，禁止进入 PROBE')
             self.mode='hold';self.goal=None;self.force_target=None;self._recontact_deadline_ns=None
             self._recontact_stable=False
             self._publish_probe_pause('probe_pause_target')
@@ -113,6 +118,8 @@ class NormalizedGripper(RosNormalizedGripperObserver):
         self._position_request={'requested_ns':int(self._clock_ns()),'start_normalized':sample['normalized']}
         self._first_position_command_ns=None;self._position_target=None;self._position_target_changed_ns=None
         self._slow_close_tracking=False
+        self._previous_close_was_fast=False;self._fast_handoff_ns=None
+        self._handoff_wait=None;self._handoff_recovery_used=False
     def motion_status(self):
         with self.control_lock:
             return {**(self._position_request or {}),'mode':self.mode,
@@ -150,6 +157,7 @@ class NormalizedGripper(RosNormalizedGripperObserver):
                 self._recontact_contact_since_ns=None;self._recontact_stable=False;self.mode='recontact'
     def force(self,target,tolerance,*,probe=False):
         with self.control_lock:
+            if self._handoff_wait is not None:raise RuntimeError('快慢闭合切换的反馈仍在核对，禁止进入力控')
             if self.fault or self.overforce:raise RuntimeError(self.fault or 'F_max 已触发')
             if not 0<target<self.cfg['force']['max']:raise ValueError('力目标需小于 F_max')
             self._recontact_deadline_ns=None;self._recontact_stable=False;self._probe_force=bool(probe)
@@ -168,8 +176,34 @@ class NormalizedGripper(RosNormalizedGripperObserver):
                 if np.all(normals>=np.asarray(thresholds)):return
                 self._recontact_stable=False;self._recontact_contact_since_ns=None;self.mode='recontact'
             if self.mode=='hold':return
-            if self.mode in ('close','force','recontact') and s['normalized']<self.cfg['gripper']['min_normalized']-1e-6:
+            if self.mode in ('close','force','recontact','handoff_wait') and s['normalized']<self.cfg['gripper']['min_normalized']-1e-6:
                 self.hold();raise RuntimeError('实际归一化开度已低于配置下限，停止进一步闭合')
+            if self.mode=='handoff_wait':
+                waiting=self._handoff_wait
+                if waiting is None:
+                    self.hold();raise RuntimeError('快慢闭合切换核对状态丢失；已停止闭合')
+                if now-waiting['started_ns']>=250_000_000:
+                    previous,actual=waiting['reference_counts'],round(s['normalized']*1000.)
+                    self.hold();raise RuntimeError('慢闭合指令与反馈相差超过2个刻度，暂停250毫秒后仍未连续恢复：指令=%d，反馈=%d；已停止闭合' % (previous,actual))
+                if s['source_sequence']==waiting['last_sequence']:return
+                waiting['last_sequence']=s['source_sequence']
+                actual=round(s['normalized']*1000.)
+                if abs(actual-waiting['reference_counts'])>3:
+                    previous=waiting['reference_counts']
+                    self.hold();raise RuntimeError('快慢闭合切换期间反馈继续偏离：指令=%d，反馈=%d；已停止闭合' % (previous,actual))
+                prior=waiting['last_good_counts']
+                if abs(actual-waiting['reference_counts'])<=2:
+                    waiting['stable_frames']=waiting['stable_frames']+1 if prior is not None and abs(actual-prior)<=1 else 1
+                    waiting['last_good_counts']=actual
+                else:
+                    waiting['stable_frames']=0;waiting['last_good_counts']=None
+                if waiting['stable_frames']>=2:
+                    # Only new independent feedback within the original two-count
+                    # limit permits a new slow-close command on a later tick.
+                    self.mode='close';self._handoff_wait=None;self._fast_close_cancelled=True
+                    self._slow_close_tracking=False;self._position_target=None
+                    self.last_position_seq=s['source_sequence'];self.last_tick=now
+                return
             if self.mode=='recontact':
                 if now>=self._recontact_deadline_ns:
                     self.hold();return
@@ -223,6 +257,9 @@ class NormalizedGripper(RosNormalizedGripperObserver):
                 self._fast_close_cancelled=True
             fast_until=g.get('fast_close_until_normalized',.5)
             fast=self.mode=='close' and not self._fast_close_cancelled and actual>fast_until
+            if self.mode=='close' and self._previous_close_was_fast and not fast:
+                self._fast_handoff_ns=now
+            if self.mode=='close':self._previous_close_was_fast=fast
             speed=g.get('fast_close_speed_normalized_s',.20) if fast else g[('open' if self.mode=='open' else 'close')+'_speed_normalized_s']
             if self.mode=='open' and delta<0:raise RuntimeError('张开目标小于当前读数，拒绝反向闭合')
             if self.mode in ('close','recontact') and delta>0:raise RuntimeError('闭合下限大于当前读数')
@@ -236,6 +273,23 @@ class NormalizedGripper(RosNormalizedGripperObserver):
                 max_error=g.get('position_max_tracking_error_counts',2)
                 previous=round(self._position_target*1000.) if self._slow_close_tracking and self._position_target is not None else None
                 if previous is not None and abs(actual_counts-previous)>max_error:
+                    # A single 3-count discrepancy immediately after the
+                    # fast-to-slow handoff may be transient. Stop requesting
+                    # additional closure immediately; never expand the 2-count
+                    # limit, and permit only one short, independently sampled
+                    # recovery per close. Other mismatches still fail at once.
+                    handoff=(self.mode=='close' and abs(actual_counts-previous)==max_error+1 and
+                             self._fast_handoff_ns is not None and now-self._fast_handoff_ns<=300_000_000 and
+                             not self._handoff_recovery_used)
+                    if handoff:
+                        self._handoff_recovery_used=True
+                        self._handoff_wait={'started_ns':int(now),'reference_counts':previous,
+                                            'first_feedback_counts':actual_counts,
+                                            'last_sequence':s['source_sequence'],'stable_frames':0,
+                                            'last_good_counts':None}
+                        self.mode='handoff_wait'
+                        self._publish(actual_counts/1000.,'handoff_wait_hold')
+                        return
                     self.hold()
                     raise RuntimeError('慢闭合指令与反馈相差超过%d个刻度：指令=%d，反馈=%d；已停止闭合' % (max_error,previous,actual_counts))
                 if previous is not None and abs(actual_counts-previous)>tolerance:

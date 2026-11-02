@@ -792,6 +792,84 @@ class SlowCloseFeedbackToleranceTests(unittest.TestCase):
         self.tick(helper,g,.447);self.assertAlmostEqual(helper.ros.values[-1],.445)
 
 
+class FastToSlowTrackingRecoveryTests(unittest.TestCase):
+    def tick(self,helper,g,width,ns=50_000_000):
+        helper.clock+=ns;g._on_state(types.SimpleNamespace(data=width));g.tick()
+
+    def handoff(self):
+        helper=GripperTests();g=helper.gripper()
+        g._on_state(types.SimpleNamespace(data=1.));g.close_to_floor()
+        self.tick(helper,g,1.);self.assertAlmostEqual(helper.ros.values[-1],.990)
+        self.tick(helper,g,.990);self.assertAlmostEqual(helper.ros.values[-1],.980)
+        helper.normal=[.1,0.];self.tick(helper,g,.983)
+        self.assertAlmostEqual(helper.ros.values[-1],.982)
+        return helper,g
+
+    def test_three_count_handoff_pauses_and_requires_two_fresh_recovered_frames(self):
+        helper,g=self.handoff();self.tick(helper,g,.979)
+        self.assertEqual(g.mode,'handoff_wait');self.assertAlmostEqual(helper.ros.values[-1],.979)
+        count=len(helper.ros.values)
+        self.tick(helper,g,.982);self.assertEqual(g.mode,'handoff_wait');self.assertEqual(len(helper.ros.values),count)
+        self.tick(helper,g,.982);self.assertEqual(g.mode,'close');self.assertEqual(len(helper.ros.values),count)
+        self.tick(helper,g,.982);self.assertAlmostEqual(helper.ros.values[-1],.981)
+        self.assertLessEqual(abs(helper.ros.values[-1]-.982),.002+1e-9)
+        events=g.drain_samples()
+        self.assertTrue(any((e.metadata or {}).get('kind')=='handoff_wait_hold' for e in events))
+
+    def test_unrecovered_handoff_stops_after_250ms(self):
+        helper,g=self.handoff();self.tick(helper,g,.979)
+        count=len(helper.ros.values)
+        for _ in range(4):self.tick(helper,g,.979)
+        self.assertEqual(len(helper.ros.values),count)
+        with self.assertRaisesRegex(RuntimeError,'250毫秒'):
+            self.tick(helper,g,.979)
+        self.assertEqual(g.mode,'hold');self.assertAlmostEqual(helper.ros.values[-1],.979)
+
+    def test_stale_feedback_cannot_be_counted_as_two_frames(self):
+        helper,g=self.handoff();self.tick(helper,g,.979)
+        self.tick(helper,g,.982)
+        count=len(helper.ros.values)
+        helper.clock+=50_000_000;g.tick()
+        self.assertEqual(g.mode,'handoff_wait');self.assertEqual(len(helper.ros.values),count)
+
+    def test_feedback_diverging_further_stops_before_wait_deadline(self):
+        helper,g=self.handoff();self.tick(helper,g,.979)
+        with self.assertRaisesRegex(RuntimeError,'继续偏离'):self.tick(helper,g,.978)
+        self.assertEqual(g.mode,'hold')
+
+    def test_two_distant_feedback_values_are_not_treated_as_stable(self):
+        helper,g=self.handoff();self.tick(helper,g,.979)
+        self.tick(helper,g,.980);self.tick(helper,g,.984)
+        self.assertEqual(g.mode,'handoff_wait')
+        self.tick(helper,g,.984);self.assertEqual(g.mode,'close')
+
+    def test_four_count_or_later_mismatch_still_stops_immediately(self):
+        helper,g=self.handoff()
+        with self.assertRaisesRegex(RuntimeError,'超过2个刻度'):self.tick(helper,g,.978)
+        self.assertEqual(g.mode,'hold')
+        helper,g=self.handoff()
+        with self.assertRaisesRegex(RuntimeError,'超过2个刻度'):self.tick(helper,g,.979,350_000_000)
+        self.assertEqual(g.mode,'hold')
+
+    def test_repeated_mismatch_is_not_retried_again(self):
+        helper,g=self.handoff();self.tick(helper,g,.979)
+        self.tick(helper,g,.982);self.tick(helper,g,.982);self.tick(helper,g,.982)
+        with self.assertRaisesRegex(RuntimeError,'超过2个刻度'):self.tick(helper,g,.978)
+        self.assertEqual(g.mode,'hold')
+
+    def test_force_limit_still_opens_during_handoff_wait(self):
+        helper,g=self.handoff();self.tick(helper,g,.979)
+        helper.normal=[16.,0.];self.tick(helper,g,.979)
+        self.assertTrue(g.overforce);self.assertEqual(g.mode,'open')
+        self.assertIsNone(g._handoff_wait)
+
+    def test_handoff_wait_forbids_force_and_probe_transition(self):
+        helper,g=self.handoff();self.tick(helper,g,.979)
+        with self.assertRaisesRegex(RuntimeError,'禁止进入 PROBE'):g.pause_probe()
+        with self.assertRaisesRegex(RuntimeError,'禁止进入力控'):g.force(1.5,.25)
+        self.assertEqual(g.mode,'handoff_wait')
+
+
 class RecontactSourceContinuityTests(unittest.TestCase):
     def tick(self,helper,g,ns=50_000_000):
         helper.clock+=ns;g._on_state(types.SimpleNamespace(data=.369));g.tick()
