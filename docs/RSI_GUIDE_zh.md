@@ -4,20 +4,22 @@
 
 旧的 `e1e2`、`agentic run/resume`、setup/run 向导继续使用原入口。已经运行的 `outputs/agentic_planning01` 不会被自动转成 RSI。RSI 使用新输出目录，可以把兼容的旧 E1/E2 数据作为共同起点。
 
-## 1. 用已有 A 数据启动
+## 1. 复用已有数据启动精简采集
 
 在 5090 的实验目录执行：
 
 ```bash
 cd /home/dm/DM_das/bottle_grasp_experiment
 bash run_on_5090.sh rsi run --real \
-  --seed-session outputs/e1e2_A_formal01 \
-  --out outputs/rsi_contact01
+  --seed-campaign outputs/rsi_contact01 \
+  --out outputs/rsi_efficient01
 ```
 
-这里 `outputs/e1e2_A_formal01` 是旧数据，程序读取并保留原位；`outputs/rsi_contact01` 是这次新实验的目录。`--seed-session` 可以重复写，前提是各数据的 T0、机械臂、触觉、力和硬件定义兼容。每个 seed 必须是包含 `session_meta.json` 的单个 E1/E2 会话或批次目录，例如旧 Agentic 的 `batches/0001`；不能直接填写包含多个批次的 campaign 根目录。不要使用仍在采集或准备修改标签的数据作为种子。
+这里 `outputs/rsi_contact01` 是旧任务，新任务写入 `outputs/rsi_efficient01`。程序要求旧任务已暂停且没有活动批次；自动导入其原始种子和已完成的 A 采集批次，**不把 B 评价或最终验证加入训练**。旧文件保持原位；元数据、标签及实测 TCP 数据会计算哈希，改变后不能静默续跑。该检查不对全部图像和 DD 数据计算哈希。T0、机械臂、触觉和力协议不兼容时会停止。
 
-新建时不传 `--seed-session`，程序会先做配置中的共同 A 采集，再训练初始策略：
+若只使用单个 E1/E2 会话，改用 `--seed-session outputs/e1e2_A_formal01`。该参数可以重复填写；每项必须指向含 `session_meta.json` 的单个会话或批次。两种参数可同时使用，重复路径会去重。
+
+新建时既不传 `--seed-session` 也不传 `--seed-campaign`，程序会先做配置中的共同 A 采集，再训练初始策略：
 
 ```bash
 bash run_on_5090.sh rsi run --real --out outputs/rsi_from_start01
@@ -33,9 +35,9 @@ bash run_on_5090.sh rsi run --real --out outputs/rsi_from_start01
 2. 训练初始 ContactPolicy，并做按完整 session 或完整试验分组的留出检查。样本不足或误差超标时暂停，不把未通过的策略用于 B。
 3. 从长期方法库检索相关方法、有效证据和反例；把实际输入及 Agent 的提案写入 `prompt_buffer/`。
 4. Agent 提出一个新方法，或提出复用已有方法，或者解释为何应暂停。新方法必须能用已实现的特征与规则表达。
-5. 形成旧方法 `old` 与候选方法 `new` 两个分支。它们共享相同起点数据，各自分配同样的新采集预算，按交错顺序执行 A 采集。
-6. 两个分支各自训练 ContactPolicy，再在预先确定、相同的测点与瓶子上交错执行 B 评估。
-7. 程序比较证据。只有满足固定评估要求且候选有足够优势，才替换当前方法；否则保留旧方法，同时保存本次结果和反例。递归模式下一轮可以检索刚留下的经历。
+5. 形成旧方法 `old` 与候选方法 `new` 两个分支。它们共享相同起点数据，各自分配同样的新采集预算，按交错顺序执行 A 采集。已有记录的点获得较低的覆盖补充优先级；每分支每个名义点的扫描上限按整轮累计，零点监测另计。
+6. 两个分支各自训练 ContactPolicy，在预先确定、相同的测点与瓶子上交错执行小样本 B 筛查。筛查只决定是否值得补充，不能晋升方法或证明两方法一样。
+7. 若筛查成功率差的绝对值达到预先配置的 0.2，程序在相同测点和预算下，用**全新的独立 B 试验**正式比较。只有独立确认满足固定评估要求且候选有足够优势，才替换当前方法；否则保留旧方法并保存结果。递归模式下一轮可检索筛查和比较经历。
 8. 达到本次轮数/预算限制时，冻结当前策略并执行预先配置的最终 A/B 验证。最终验证数据不再反馈训练或方法晋升。Agent 选择复用当前方法时仍执行等预算的同方法重复对照，检查稳定性，不把它算作发现了更好的新方法。
 
 方法分支 `old/new` 和机器人条件 `A/B` 是两套不同的标记：前者比较“怎样采集更有效”，后者表示“不纠正/使用触觉恢复”。
@@ -62,17 +64,17 @@ bash run_on_5090.sh rsi run --real --out outputs/rsi_from_start01
 `q` 是正常暂停方式。下次直接执行：
 
 ```bash
-bash run_on_5090.sh rsi resume --real --out outputs/rsi_contact01
+bash run_on_5090.sh rsi resume --real --out outputs/rsi_efficient01
 ```
 
-续跑读取原目录中冻结的配置、方法、模型、计划和 T0。**不要再加 `--seed-session`、`--provider`、`--memory-mode`、`--task-id` 或旧入口的 `--planning agent`。** 已完成试验保留，未完成尝试按原执行器规则归档到 `interrupted/` 后处理；额外尝试会占用预算。已结束且没有待做工作的 RSI 会话直接退出，不连接硬件。
+续跑读取原目录中冻结的配置、方法、模型、计划和 T0。**不要再加 `--seed-session`、`--seed-campaign`、`--provider`、`--memory-mode`、`--task-id` 或旧入口的 `--planning agent`。** 已完成试验保留，未完成尝试按原执行器规则归档到 `interrupted/` 后处理；额外尝试会占用预算。已结束且没有待做工作的 RSI 会话直接退出，不连接硬件。旧 `rsi_contact01` 的续跑仍使用创建时的旧协议；新精简协议需要新目录。
 
 Ctrl+C 沿用现有软件停止规则：尚未提起时停止机械臂并开爪；已经提起时保持夹爪，现场处理。逐指超力的既有开爪规则仍优先。软件停止不替代现场急停。
 
 如果提示存在未处理的空中/恢复状态，先在现场把瓶子安全放回支撑面、确认夹爪完全张开并恢复原 T0，再执行：
 
 ```bash
-bash run_on_5090.sh rsi recover --out outputs/rsi_contact01
+bash run_on_5090.sh rsi recover --out outputs/rsi_efficient01
 ```
 
 核对提示后输入 `RECOVERED`。这个命令只记录人工恢复声明，不连接机器人、不替你执行移动；随后再 `resume --real`，首段动作仍需 `MOVE`。不要用 `recover` 绕过尚未处理的实际状态。
@@ -82,12 +84,12 @@ bash run_on_5090.sh rsi recover --out outputs/rsi_contact01
 以下命令不执行机器人运动：
 
 ```bash
-bash run_on_5090.sh rsi status --out outputs/rsi_contact01
-bash run_on_5090.sh rsi report --out outputs/rsi_contact01
+bash run_on_5090.sh rsi status --out outputs/rsi_efficient01
+bash run_on_5090.sh rsi report --out outputs/rsi_efficient01
 bash run_on_5090.sh rsi memory
 ```
 
-`status` 显示当前阶段、活动批次、方法/策略版本和最近错误。`report` 更新并打印 `outputs/rsi_contact01/REPORT.md` 的位置；采集进程仍持有该会话锁时，可以先直接查看已经生成的报告，避免另开写入进程。`memory` 列出默认方法库的版本与证据状态；使用其它方法库配置时传 `--config 你的配置.yaml`。
+`status` 显示当前阶段、活动批次、方法/策略版本和最近错误。`report` 更新并打印 `outputs/rsi_efficient01/REPORT.md` 的位置；采集进程仍持有该会话锁时，可以先直接查看已经生成的报告，避免另开写入进程。`memory` 列出默认方法库的版本与证据状态；使用其它方法库配置时传 `--config 你的配置.yaml`。
 
 主要结果这样读：
 
@@ -136,9 +138,11 @@ bash run_on_5090.sh rsi run --real \
 
 ## 7. 默认工作量和配置
 
-默认使用 `config.rsi.yaml`，底层安全与运动设置来自 `config.e1e2.yaml`。当前默认研究范围为 a 轴 −10～+10 mm；候选网格基础间隔 2 mm；没有种子时，共同 A 起点为 −10、−5、0、+5、+10 mm，各 6 次，轻重瓶各半。
+新 `rsi run` 默认使用 `config.rsi.efficient.yaml`，底层安全与运动设置来自 `config.e1e2.yaml`。当前默认研究范围为 a 轴 −10～+10 mm；候选网格基础间隔 2 mm；没有种子时，共同 A 起点为 −10、−5、0、+5、+10 mm，各 6 次，轻重瓶各半。若明确需要旧协议，新建时传 `--config config.rsi.yaml`。
 
-每轮方法对照中，每分支新增 24 次 A 采集。在累计新增 12、24 次时分别训练，并各自在上述 5 个测点各做 4 次 B 评估，生成两个实测检查点的学习曲线。含零点监测，通常每轮 140 次尝试；最终 A/B 验证另需 44 次。默认最多 3 轮、400 次新增尝试和 8 小时，因此正常完整流程预算通常容纳 2 轮：有共同起点采集时约 357 次，无需起点采集时约 324 次。实际计划与暂停信息以终端和 `rsi.json` 为准，中断也计数。Agent 可以选择暂停并说明证据或能力不足；复用当前规则仍会做同方法对照。
+每轮每分支新增 12 次 A 扫描，按 4 次一小批选点；每个名义偏移默认最多 4 次扫描（整轮累计，轻/重瓶平衡），零点监测另计。Agent 若有证据说明需要更多重复，必须在提案的 `repeat_justification` 中记录理由；默认绝对上限为每点 8 次，分支总次数不增加。旧方法没有该说明时仍按 4 次限制。对每个候选点，程序在 Agent 方法评分上加入同样的已有覆盖补充项：`0.5 / (1 + 邻域已有 A 次数)`，邻域默认 ±1 mm；这是启发式，不表示这些观测完全相同。筛查每分支 10 次 B（5 个偏移，每种瓶子各一次）；筛查差异达到 0.2 时，另做每分支 20 次全新 B 正式确认。
+
+按默认零点监测计算，仅筛查的一轮通常 **48 次**，触发独立确认通常 **92 次**；最终 A/B 验证另需 44 次。分组留出仍按完整 session 分开，新模式仅用样本数量平衡训练/留出规模，不能证明跨日泛化。筛查样本少，可能漏掉真正的改进；不晋升也不等于两种方法相同。默认最多 3 轮、400 次新增尝试和 8 小时；程序预留独立确认的最坏情况预算，实际次数以 `rsi.json` 为准，中断也计数。
 
 如需改变工作量，先复制并编辑 YAML，再用 `--config 新文件.yaml` 新建一个输出目录。不要在已经冻结的对照中途改变预算、评估点或判据。缩小评估样本会更容易得到 `inconclusive`；不能为得到“有效”而事后降低标准。
 
@@ -147,13 +151,14 @@ bash run_on_5090.sh rsi run --real \
 完整目录解释见 [RSI 设计说明](RSI_DESIGN.md#数据与证据目录)。最常用的位置：
 
 ```text
-outputs/rsi_contact01/REPORT.md
-outputs/rsi_contact01/rsi.json
-outputs/rsi_contact01/prompt_buffer/
-outputs/rsi_contact01/cycles/001/protocol.json
-outputs/rsi_contact01/cycles/001/comparison.json
-outputs/rsi_contact01/models/<model_id>.json
-outputs/rsi_contact01/batches/<batch_id>/trials/<trial_id>/streams.h5
+outputs/rsi_efficient01/REPORT.md
+outputs/rsi_efficient01/rsi.json
+outputs/rsi_efficient01/prompt_buffer/
+outputs/rsi_efficient01/cycles/001/protocol.json
+outputs/rsi_efficient01/cycles/001/screening.json
+outputs/rsi_efficient01/cycles/001/comparison.json
+outputs/rsi_efficient01/models/<model_id>.json
+outputs/rsi_efficient01/batches/<batch_id>/trials/<trial_id>/streams.h5
 outputs/rsi_method_memory/methods/<method_id>.json
 outputs/rsi_method_memory/experiences/<experience_id>.json
 ```
@@ -179,4 +184,4 @@ outputs/rsi_method_memory/experiences/<experience_id>.json
 
 新问题可在新建命令加入 `--problem '真实改变的问题或失败场景描述'`。同一个问题应保持描述一致；只有不同显式问题签名的支持性对照，才允许标记 `cross_task_valid`。仅改 `--out` 或 `--task-id` 不会晋升。描述还需与实际实验一致，系统不能凭文字证明任务真的改变。
 
-每轮学习曲线位于 `cycles/NNN/learning_curve.json` 和 `learning_curve.png`。曲线中的 80% 首次达到预算是离散检查点的观测值，并非成功率置信保证或理论最少数据量。
+精简模式只设一个采集预算检查点；筛查结果在 `cycles/NNN/screening.json`，不能据一个点声称学习曲线。触发独立确认后会保存对应 `comparison.json`；旧模式的多检查点曲线位于 `learning_curve.json` 和 `learning_curve.png`，其中的 80% 首次达到预算不是成功率置信保证或理论最少数据量。

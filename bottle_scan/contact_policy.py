@@ -107,6 +107,8 @@ def _settings(settings):
     for key in ('dd_pool', 'include_successful_B'):
         if type(cfg[key]) is not bool:
             raise ValueError(f'contact_policy.{key} must be boolean')
+    if 'balance_session_validation' in cfg and type(cfg['balance_session_validation']) is not bool:
+        raise ValueError('contact_policy.balance_session_validation must be boolean')
     if 'frozen_validation_groups' in cfg:
         groups = cfg['frozen_validation_groups']
         if (not isinstance(groups, list) or not groups or
@@ -190,7 +192,7 @@ def _split(obs, cfg):
     def feasible(chosen):
         n = sum(counts[k] for k in chosen)
         return n >= cfg['min_validation_samples'] and len(obs)-n >= cfg['min_train_samples']
-    if not feasible(held):
+    if not feasible(held) or cfg.get('balance_session_validation', False):
         candidates = [{g} for g in order if feasible({g})]
         for start in range(len(order)):
             chosen = set()
@@ -199,13 +201,16 @@ def _split(obs, cfg):
                     chosen.add(g)
                 if feasible(chosen):
                     candidates.append(chosen.copy())
-                    break
+                    if not cfg.get('balance_session_validation', False):
+                        break
         if candidates:
             desired = cfg['validation_fraction'] * len(obs)
             held = min(candidates, key=lambda subset: abs(sum(counts[g] for g in subset)-desired))
     test = np.asarray([i for i, key in enumerate(keys) if key in held], int)
     train = np.asarray([i for i, key in enumerate(keys) if key not in held], int)
-    return train, test, {'method': method, 'seed': cfg['seed'], 'split_selection': 'seeded whole groups, size-only feasibility; no feature/label access',
+    selection = ('seeded whole groups, size-only feasibility and balance; no feature/label access' if cfg.get('balance_session_validation', False)
+                 else 'seeded whole groups, size-only feasibility; no feature/label access')
+    return train, test, {'method': method, 'seed': cfg['seed'], 'split_selection': selection,
                          'validation_groups': sorted(held),
                          'training_groups': sorted(set(keys) - held)}
 

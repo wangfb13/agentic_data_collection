@@ -265,7 +265,10 @@ def validate_response(value: Any, context: dict) -> dict:
             raise _Rejected("reuse_method 只能引用明确允许复用的版本，method 必须为 null。", "reuse_not_allowed")
         return dict(value)
     method = value["method"]
-    if value["method_id"] is not None or not isinstance(method, dict) or set(method) != _METHOD_KEYS:
+    efficient = context.get('efficiency_protocol')
+    allowed_keys = _METHOD_KEYS | ({'repeat_justification'} if isinstance(efficient, dict) else set())
+    if (value["method_id"] is not None or not isinstance(method, dict) or
+            not _METHOD_KEYS <= set(method) or not set(method) <= allowed_keys):
         raise _Rejected("propose_method 必须含规定的八个方法字段；外层 method_id 必须为 null。", "method_keys")
     if method["parent_id"] is not None and (not isinstance(method["parent_id"], str)
                                             or method["parent_id"] not in known):
@@ -279,6 +282,13 @@ def validate_response(value: Any, context: dict) -> dict:
         normalized = validate_method(method, known_refs=refs, parent_ids=known)
     except (ValueError, TypeError, KeyError, RecursionError, OverflowError):
         raise _Rejected("方法不满足 AST、采样参数、文本长度或唯一证据约束；请按协议修订。", "method_schema") from None
+    if isinstance(efficient, dict):
+        cap = normalized['sampling']['max_reps_per_cell']
+        default_cap, override_cap = efficient.get('max_reps_per_cell'), efficient.get('max_override_reps_per_cell')
+        if type(default_cap) is not int or type(override_cap) is not int or cap > override_cap:
+            raise _Rejected('单点整轮采样次数超过预授权例外上限。', 'repeat_limit')
+        if cap > default_cap and not normalized.get('repeat_justification'):
+            raise _Rejected('超过默认单点次数必须在 repeat_justification 中解释重复的证据与用途。', 'repeat_justification')
     available = context.get("available_features")
     if available is not None:
         available = set(_identifier_list(available))
@@ -296,8 +306,22 @@ def propose_method(settings: dict, context: dict, *, provider=None) -> dict:
     reuse a provided baseline/allowed version or pause; they never invent a
     method and do not invoke a model. An injected provider is caller-owned.
     """
-    audit = {"schema": "rsi_prompt_audit_v1", "system_prompt": RSI_SYSTEM,
-             "system_prompt_sha256": _sha(RSI_SYSTEM), "attempts": [],
+    system = RSI_SYSTEM
+    if isinstance(context, dict) and 'efficiency_protocol' in context:
+        system += ("\nThe efficiency_protocol is fixed for both methods. Inspect historical_coverage before "
+                   "proposing data selection. The per-cell cap applies across the whole branch and cycle, "
+                   "not per batch. In this protocol only, you may add the optional ninth method field "
+                   "(this is the sole exception to the eight-field method instruction above): "
+                   "repeat_justification, a nonempty Chinese explanation (at most 1000 chars) that cites "
+                   "the provided evidence and explains why repeated observations add information. "
+                   "If sampling.max_reps_per_cell exceeds efficiency_protocol.max_reps_per_cell, this "
+                   "field is mandatory and the value must not exceed max_override_reps_per_cell; "
+                   "the total per-branch budget remains unchanged. Without it the normal cap applies. Screening is "
+                   "descriptive and must not promote a method; any confirmation is a fresh independent test. "
+                   "The actual comparator is baseline_method_id; do not claim a direct parent ablation "
+                   "unless it is that exact comparator.\n")
+    audit = {"schema": "rsi_prompt_audit_v1", "system_prompt": system,
+             "system_prompt_sha256": _sha(system), "attempts": [],
              "live_inference": False, "outcome": "initializing"}
     try:
         if not isinstance(settings, dict) or not isinstance(context, dict):
@@ -357,7 +381,7 @@ def propose_method(settings: dict, context: dict, *, provider=None) -> dict:
                      "input_sha256": _sha(prompt_json), "proposal": None, "rejection": None}
             audit["attempts"].append(entry)
             try:
-                text, meta = provider._infer(RSI_SYSTEM, prompt_json)
+                text, meta = provider._infer(system, prompt_json)
                 audit["live_inference"] = True
                 entry["meta"] = _safe_meta(meta)
             except Exception:

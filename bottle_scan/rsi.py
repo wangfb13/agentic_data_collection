@@ -87,6 +87,25 @@ def validate_settings(s):
         raise ValueError('min_trials 至少为 20；少量成功不自动晋升方法')
     if not 0 <= finite(s['comparison']['min_effect'], 'min_effect') < 1:
         raise ValueError('min_effect 必须位于 [0,1)')
+    if 'efficiency' in s:
+        e = s['efficiency']
+        if not isinstance(e, dict) or set(e) != {'version', 'max_reps_per_cell', 'max_override_reps_per_cell', 'coverage_weight', 'coverage_radius_mm', 'confirmation_reps', 'screening_min_difference'} or e['version'] != 1:
+            raise ValueError('efficiency 配置格式错误')
+        if type(e['max_reps_per_cell']) is not int or e['max_reps_per_cell'] < 2 or e['max_reps_per_cell'] % 2:
+            raise ValueError('整轮单点次数上限必须为正偶数')
+        if (type(e['max_override_reps_per_cell']) is not int or e['max_override_reps_per_cell'] % 2
+                or not e['max_reps_per_cell'] <= e['max_override_reps_per_cell'] <= s['comparison']['collection_trials_per_branch']):
+            raise ValueError('说明理由后的单点例外上限必须是范围内的偶数')
+        if not 0 <= finite(e['coverage_weight'], 'coverage_weight') <= 10 or not 0 <= finite(e['screening_min_difference'], 'screening_min_difference') <= 1:
+            raise ValueError('去重复权重或筛查阈值超出范围')
+        if not 0 <= finite(e['coverage_radius_mm'], 'coverage_radius_mm') <= 10:
+            raise ValueError('已有覆盖邻域必须在 0～10 mm 内')
+        if type(e['confirmation_reps']) is not int or e['confirmation_reps'] < 2 or e['confirmation_reps'] % 2:
+            raise ValueError('确认试验每档次数必须为正偶数')
+        if len(s['comparison']['offsets_mm']) * e['confirmation_reps'] < s['comparison']['min_trials']:
+            raise ValueError('独立确认样本数不足，不能用于晋升')
+        if checkpoints != [s['comparison']['collection_trials_per_branch']]:
+            raise ValueError('精简模式只支持一次采集检查点及独立筛查/确认')
 
 
 def plan_for_cells(cells, cfg, *, cond, seed, monitor_start=0):
@@ -140,6 +159,49 @@ def trial_rows(roots):
     return rows
 
 
+def campaign_seed_sessions(campaign_root):
+    """Import complete A exploration batches only; never B/development/final evaluation."""
+    root = Path(campaign_root).expanduser().resolve()
+    # The source campaign holds this lock for its entire run. Never snapshot a
+    # session while another process may still append labels or samples.
+    with (root / '.rsi.lock').open('r') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ValueError('来源 RSI 正在运行，不能固定数据快照') from None
+        data = json.loads((root / 'rsi.json').read_text())
+        if data.get('schema') != 'rsi_campaign_v1' or data.get('status') == 'running' or data.get('active_batch'):
+            raise ValueError('来源 RSI 必须停止且没有活动批次，才能固定数据快照')
+        paths = [Path(x).resolve() for x in data.get('seed_sessions', [])]
+        for batch in data.get('batches', []):
+            if batch.get('phase') not in ('bootstrap', 'collection') or batch.get('status') != 'complete':
+                continue
+            if not batch.get('plan') or any(row.get('cond') != 'A' for row in batch['plan']):
+                raise ValueError('来源采集批次含非 A 试验，拒绝自动导入')
+            path = (root / batch['path']).resolve()
+            if not path.is_relative_to(root):
+                raise ValueError('来源批次路径超出会话目录')
+            paths.append(path)
+    unique = list(dict.fromkeys(paths))
+    if not unique or any(not (x / 'session_meta.json').is_file() for x in unique):
+        raise ValueError('来源会话缺少可读取的 A 采集元数据')
+    allowed = []
+    for path in unique:
+        meta = json.loads((path / 'session_meta.json').read_text())
+        role = meta.get('config', {}).get('agentic', {}).get('role')
+        plan = meta.get('plan') or []
+        if role in ('validation', 'frozen_validation', 'final_validation'):
+            continue
+        if meta.get('cond') != 'A' and not (plan and all(row.get('cond') == 'A' for row in plan)):
+            continue
+        if any(json.loads(f.read_text()).get('cond') != 'A' for f in (path / 'trials').glob('*/meta.json')):
+            continue
+        allowed.append(str(path))
+    if not allowed:
+        raise ValueError('来源没有符合条件的 A 会话；B 与评价记录不能作为 A 导入')
+    return allowed
+
+
 def summarize(roots, cells):
     rows = [r for r in trial_rows(roots) if r.get('kind') == 'scan']
     grouped = []
@@ -159,6 +221,25 @@ def summarize(roots, cells):
             'trials': sum(c['trials'] for c in grouped), 'evaluation_cells': grouped,
             'records_complete': bool(complete),
             'mean_regrasps': float(np.mean([r.get('regrasps', 0) for r in rows])) if rows else None}
+
+
+def screening_failures(roots):
+    """Summarize completed B rejections without interpreting them as drops."""
+    from collections import Counter, defaultdict
+    groups = defaultdict(Counter)
+    for row in trial_rows(roots):
+        if (row.get('kind') != 'scan' or not row.get('complete') or not row.get('recording_complete')
+                or not row.get('verified_recording') or row.get('label') in (None, 'invalid')):
+            continue
+        if row.get('status') != 'policy_rejected':
+            continue
+        history = row.get('correction_history') or []
+        reason = history[-1].get('reason', 'unknown') if history else 'unknown'
+        if not isinstance(reason, str) or len(reason) > 100:
+            reason = 'unknown'
+        groups[(float(row['delta_mm']), row['bottle'])][reason] += 1
+    return [{'offset_mm': d, 'bottle': b, 'policy_rejected': sum(reasons.values()), 'reasons': dict(reasons)}
+            for (d, b), reasons in sorted(groups.items())]
 
 
 class RSICampaign:
@@ -280,15 +361,21 @@ class RSICampaign:
         for cycle in self.state['cycles']:
             if cycle.get('phase') != 'complete':
                 continue
-            for key, summary in cycle.get('comparison', {}).items():
-                if key not in ('old', 'new'):
-                    continue
-                if summary.get('model_id') != self.state['current_policy_id']:
-                    continue
-                for cell in summary.get('evaluation_cells', []):
-                    result['diagnostics'].append({'code': 'B_offset_feedback', 'offset_mm': cell['offset_mm'],
-                        'n': cell['trials'], 'failures': cell['trials'] - cell['successes'],
-                        'cycle': cycle['id'], 'branch': key, 'source': 'completed_previous_development_evaluation'})
+            sources = [('comparison', cycle.get('comparison', {}))]
+            if 'efficiency' in self.settings:
+                sources.append(('screening', cycle.get('screening', {}).get('branches', {})))
+            for source, summaries in sources:
+                for key, summary in summaries.items():
+                    if key not in ('old', 'new') or summary.get('model_id') != self.state['current_policy_id']:
+                        continue
+                    for cell in summary.get('evaluation_cells', []):
+                        result['diagnostics'].append({'code': 'B_offset_feedback', 'offset_mm': cell['offset_mm'],
+                            'n': cell['trials'], 'failures': cell['trials'] - cell['successes'],
+                            'cycle': cycle['id'], 'branch': key,
+                            'source': ('completed_previous_development_evaluation' if source == 'comparison' else 'completed_previous_screening')})
+                    for cell in summary.get('failure_diagnostics', []):
+                        result['diagnostics'].append({'code': 'B_policy_rejected', 'cycle': cycle['id'],
+                                                      'branch': key, 'source': 'completed_previous_' + source, **cell})
         return result
 
     def check_cycle_origin(self, cycle):
@@ -301,6 +388,17 @@ class RSICampaign:
             raise ValueError('方法对照的预注册训练预算被修改')
         if fingerprint(self.state.get('frozen_validation_groups', [])) != cycle['protocol'].get('offline_validation_groups_hash', fingerprint([])):
             raise ValueError('方法对照的离线留出分组被修改')
+        if self.settings.get('efficiency') != cycle['protocol'].get('efficiency'):
+            raise ValueError('本轮去重复或筛查规则被修改，拒绝继续')
+        if 'efficiency' in self.settings:
+            v, p = self.settings['comparison'], cycle['protocol']
+            if (self.cells('comparison') != p['screening_cells'] or
+                    self.cells('comparison', reps=self.settings['efficiency']['confirmation_reps']) != p['evaluation_cells'] or
+                    self.scheduled_count(v['collection_trials_per_branch']) != p['collection_budget'] or
+                    self.checkpoints() != p['checkpoints'] or v['min_trials'] != p['min_trials'] or
+                    v['min_effect'] != p['min_effect'] or v['batch_scan_trials'] != p['batch_scan_trials'] or
+                    self.settings['scope'] != p['scope'] or self.settings['seed'] != p['sampling_seed']):
+                raise ValueError('本轮采集预算、点位、随机种子或评价标准被修改，拒绝继续')
 
     def batch(self, plan, *, phase, branch=None, cycle=None, model_id=None):
         from .agentic_executor import validate_plan
@@ -371,9 +469,9 @@ class RSICampaign:
         self.save()
         return bool(result.get('complete') and not result.get('quit'))
 
-    def cells(self, section):
+    def cells(self, section, *, reps=None):
         value = self.settings[section]
-        return [{'offset_mm': float(d), 'bottle': b, 'trials': value['reps']//2}
+        return [{'offset_mm': float(d), 'bottle': b, 'trials': (value['reps'] if reps is None else reps)//2}
                 for d in value['offsets_mm'] for b in self.cfg['design']['bottles']]
 
     def scheduled_count(self, scans):
@@ -386,6 +484,13 @@ class RSICampaign:
 
     def cycle_cost(self):
         v = self.settings['comparison']
+        if 'efficiency' in self.settings:
+            # Reserve the full independent confirmation in advance, even though
+            # a nondiscriminating screen may stop earlier.
+            e = self.settings['efficiency']
+            return 2 * (self.scheduled_count(v['collection_trials_per_branch']) +
+                        self.scheduled_count(len(v['offsets_mm']) * v['reps']) +
+                        self.scheduled_count(len(v['offsets_mm']) * e['confirmation_reps']))
         return 2 * (self.scheduled_count(v['collection_trials_per_branch']) +
                     self.scheduled_count(len(v['offsets_mm']) * v['reps']) * len(self.checkpoints()))
 
@@ -396,7 +501,7 @@ class RSICampaign:
         return self.checkpoints()[cycle.get('checkpoint_index', 0)]
 
     def propose(self):
-        from .rsi_methods import cell_features
+        from .rsi_methods import cell_features, historical_coverage
         from .rsi_proposer import propose_method
         report = self.analysis(self.state['base_sessions'])
         memory = self.store.retrieve(self.memory_context(), limit=self.settings['memory']['retrieval_limit']) if self.settings['memory']['mode'] == 'recursive' else self.state['memory_snapshot']
@@ -407,12 +512,14 @@ class RSICampaign:
         memory = copy.deepcopy(memory)
         for entry in memory:
             entry['past_experiences'] = [{k: e.get(k) for k in
-                ('experience_id', 'task_id', 'context', 'diagnosis', 'notes', 'evidence_refs', 'evaluation', 'training_failure')}
+                ('experience_id', 'task_id', 'context', 'diagnosis', 'notes', 'evidence_refs', 'evaluation', 'training_failure', 'screening')}
                 for e in entry.get('past_experiences', [])[-6:]]
         library = list({m['method_id']: m for m in
                         [self.store.get(self.state['incumbent_method_id'])] + [m['method'] for m in memory]}.values())
         references = {'metrics': report['metrics'], 'diagnostics': report['diagnostics'],
                       'acquisition_features': cell_features(report, scope=self.settings['scope'], step_mm=self.settings['scope']['step_mm'])}
+        if 'efficiency' in self.settings:
+            references['historical_coverage'] = historical_coverage(report)
         for entry in memory:
             references['method:' + entry['method']['method_id']] = entry
         context = {**self.memory_context(), 'references': references, 'valid_evidence_refs': sorted(references),
@@ -424,6 +531,10 @@ class RSICampaign:
                    'available_observations': 'two-finger tactile descriptors; processed DD pooling where available',
                    'unavailable_capabilities': ['new sensing modality', 'new motion primitive', 'new force or safety limits'],
                    'label_caveat': 'action conflict uses measured-TCP geometric supervision; not proven optimal actions'}
+        if 'efficiency' in self.settings:
+            context['efficiency_protocol'] = {**self.settings['efficiency'],
+                'note': 'Cap is per branch across the whole cycle; historical coverage bonus is applied identically to both methods. '
+                        'The first B screen is descriptive only; any promotion requires a fresh independent confirmation.'}
         number = len(self.state['cycles']) + 1
         # A failed attempt does not overwrite an earlier prompt buffer.
         stamp = f'{number:03d}_{time.time_ns()}'
@@ -462,6 +573,15 @@ class RSICampaign:
                     'min_effect': self.settings['comparison']['min_effect'],
                     'checkpoints': self.checkpoints(),
                     'preregistered': True, 'evaluation_independent': True}
+        if 'efficiency' in self.settings:
+            e = self.settings['efficiency']
+            protocol['screening_cells'] = self.cells('comparison')
+            protocol['evaluation_cells'] = self.cells('comparison', reps=e['confirmation_reps'])
+            protocol['efficiency'] = copy.deepcopy(e)
+            protocol['batch_scan_trials'] = self.settings['comparison']['batch_scan_trials']
+            protocol['scope'] = copy.deepcopy(self.settings['scope'])
+            protocol['sampling_seed'] = self.settings['seed']
+            protocol['confirmation_independent_of_screen'] = True
         cycle = {'id': number, 'created_unix_ns': time.time_ns(), 'phase': 'collect', 'base_sessions': self.state['base_sessions'][:],
                  'base_policy_id': self.state['current_policy_id'], 'protocol': protocol,
                  'protocol_sha256': fingerprint(protocol), 'decision': decision,
@@ -491,14 +611,29 @@ class RSICampaign:
             roots = cycle['base_sessions'] + self.roots(branch['collect'])
             report = self.analysis(roots)
             try:
+                prior = {}
+                if 'efficiency' in self.settings:
+                    for previous in self.state['batches']:
+                        if previous['id'] in branch['collect']:
+                            for row in previous['plan']:
+                                if row.get('kind') == 'scan':
+                                    x = float(row['delta_mm'])
+                                    prior[x] = prior.get(x, 0) + 1
                 cells = select_cells(self.store.get(branch['method_id']), report,
                                      scope=self.settings['scope'], trial_budget=n,
-                                     seed=self.settings['seed'] + cycle['id'] * 100 + branch['scan_count'])
+                                     seed=self.settings['seed'] + cycle['id'] * 100 + branch['scan_count'],
+                                     prior_counts=prior, efficiency=self.settings.get('efficiency'))
                 if sum(c['reps'] for c in cells) != n:
                     raise ValueError('采集方法无法分配完整等预算批次；不静默裁切或补随机点')
                 plan = plan_for_cells(cells, self.cfg, cond='A', seed=self.settings['seed'] + branch['scan_count'],
                                       monitor_start=branch['scan_count'])
                 b = self.batch(plan, phase='collection', branch=key, cycle=cycle['id'])
+                if 'efficiency' in self.settings:
+                    from .rsi_methods import historical_coverage
+                    b['selection'] = {'cells': cells, 'previous_cycle_counts': prior,
+                                      'historical_coverage': historical_coverage(report),
+                                      'rule': copy.deepcopy(self.settings['efficiency'])}
+                    atomic_json(self.root / b['path'] / 'batch_plan.json', b)
             except ValueError as exc:
                 cycle['method_failure'] = {'branch': key, 'reason': str(exc)}
                 cycle['experience_id'] = self.store.record_experience({
@@ -550,14 +685,18 @@ class RSICampaign:
                     return
                 self.save()
         v = self.settings['comparison']
+        efficient = 'efficiency' in self.settings
+        stage = cycle.get('evaluation_stage', 'screen') if efficient else 'legacy'
+        reps = (self.settings['efficiency']['confirmation_reps'] if stage == 'confirmation' else v['reps'])
         count = 0
         for offset in v['offsets_mm']:
-            for repeat in range(v['reps']//2):
+            for repeat in range(reps//2):
                 order = ['old', 'new']
                 random.Random(self.settings['seed'] + cycle['id']*1000 + count).shuffle(order)
                 for key in order:
                     branch = cycle['branches'][key]
-                    slot = f"{cycle.get('checkpoint_index', 0)}:{key}:{count}"
+                    slot = (f"{cycle.get('checkpoint_index', 0)}:{stage}:{key}:{count}" if efficient else
+                            f"{cycle.get('checkpoint_index', 0)}:{key}:{count}")
                     existing = next((b for b in self.state['batches'] if b.get('evaluation_slot') == slot
                                      and b.get('cycle') == cycle['id']), None)
                     if existing:
@@ -572,6 +711,66 @@ class RSICampaign:
                     cycle['evaluation_schedule'].append(b['id'])
                 count += 2
         cycle['phase'] = 'evaluate'
+        self.save()
+
+    def finish_screen(self, cycle):
+        """An inexpensive descriptive screen cannot itself promote a method."""
+        from .agentic import source_manifest
+        self.check_cycle_origin(cycle)
+        if fingerprint(cycle['protocol']) != cycle['protocol_sha256']:
+            raise ValueError('比较标准在实验后被修改')
+        branches = {}
+        for key, branch in cycle['branches'].items():
+            if source_manifest(cycle['base_sessions'] + self.roots(branch['collect'])) != branch['training_manifest']:
+                raise ValueError('分支训练数据在训练后被修改')
+            if self.spent(branch['collect']) != cycle['protocol']['collection_budget']:
+                raise ValueError('分支实际采集次数与预先冻结的等预算不同；中断也计数')
+            summary = summarize(self.roots(branch['evaluation']), cycle['protocol']['screening_cells'])
+            if not summary['records_complete']:
+                raise ValueError('筛查评价存在作废、记录缺失或中断重试；禁止静默替换评价样本')
+            branches[key] = {**summary, 'failure_diagnostics': screening_failures(self.roots(branch['evaluation'])),
+                             'model_id': branch['model_id'], 'batches': branch['evaluation'][:]}
+        difference = (branches['new']['successes'] / branches['new']['trials'] -
+                      branches['old']['successes'] / branches['old']['trials'])
+        threshold = cycle['protocol']['efficiency']['screening_min_difference']
+        confirm = not cycle.get('same_method_replication') and abs(difference) + 1e-12 >= threshold
+        screen = {'branches': branches, 'difference': difference, 'threshold': threshold,
+                  'confirmation_requested': confirm,
+                  'protocol_sha256': cycle['protocol_sha256'],
+                  'record_manifest': source_manifest(self.roots(cycle['schedule'] + cycle['evaluation_schedule'])),
+                  'interpretation': 'Descriptive selection only; no method promotion or evidence of equivalence.'}
+        cycle['screening'] = screen
+        cycle['checkpoints'] = [{'index': 0, 'scan_budget': self.checkpoint_target(cycle),
+                                 'spent_trials': self.scheduled_count(self.checkpoint_target(cycle)),
+                                 'branches': branches}]
+        atomic_json(self.root / f'cycles/{cycle["id"]:03d}/screening.json', screen)
+        if confirm:
+            for branch in cycle['branches'].values():
+                branch['evaluation'] = []
+            cycle['evaluation_schedule'] = []
+            cycle['evaluation_stage'] = 'confirmation'
+            cycle['phase'] = 'confirm_prepare'
+            self.say('筛查差异达到预设阈值；仅使用后续全新独立 B 试验判定方法。')
+            self.save()
+            return
+        # The screen is too small to claim equivalence or choose the winner.
+        result = {'outcome': 'screen_only_inconclusive', 'winner': None,
+                  'interpretation': 'Screening stopped by the preregistered rule; neither superiority nor equivalence established.'}
+        cycle['result'] = result
+        atomic_json(self.root / f'cycles/{cycle["id"]:03d}/comparison.json', {'screening': screen, 'result': result})
+        record = {'method_id': cycle['branches']['new']['method_id'], 'task_id': self.state['task_id'],
+                  'created_unix_ns': cycle.get('created_unix_ns', self.state['created_unix_ns']),
+                  'simulated': bool(self.settings.get('simulate')), 'context': self.memory_context(),
+                  'diagnosis': cycle['decision']['reason'], 'screening': screen,
+                  'notes': 'Small descriptive screen only; no promotion and no proof of equal methods.',
+                  'evidence_refs': [str(self.root / f'cycles/{cycle["id"]:03d}/screening.json')]}
+        cycle['experience_id'] = self.store.record_experience(record)
+        selected = cycle['branches']['old']
+        self.state['current_policy_id'] = selected['model_id']
+        self.state['base_sessions'] = cycle['base_sessions'] + self.roots(selected['collect'])
+        cycle['phase'] = 'complete'
+        self.state['phase'] = 'propose'
+        self.say('筛查差异未达到预设补采条件；保持旧方法，记录证据不足，不宣称方法相同。')
         self.save()
 
     def finish_checkpoint(self, cycle):
@@ -608,7 +807,8 @@ class RSICampaign:
                       for p in cycle.get('checkpoints', []) if p['branches'][key]['trials']]
             curves[key] = learning_curve(points) if len(points) >= 2 else {'points': points, 'normalized_auc': None}
             curves[key]['first_observed_budget_at_80_percent'] = next((p['spent_trials'] for p in points if p['success_rate'] >= .8), None)
-        curves['caveat'] = 'Observed checkpoint rates, not a confidence guarantee or minimum possible sample requirement. Only preregistered last checkpoint decides promotion.'
+        curves['caveat'] = ('Screening points are descriptive only; fresh confirmation decides promotion.' if 'efficiency' in self.settings else
+                            'Observed checkpoint rates, not a confidence guarantee or minimum possible sample requirement. Only preregistered last checkpoint decides promotion.')
         folder = self.root / f'cycles/{cycle["id"]:03d}'
         atomic_json(folder / 'learning_curve.json', curves)
         try:
@@ -657,6 +857,8 @@ class RSICampaign:
                   'simulated': bool(self.settings.get('simulate')), 'context': self.memory_context(),
                   'diagnosis': cycle['decision']['reason'], 'notes': 'Geometric-supervision ContactPolicy; real and synthetic evidence separated',
                   'evidence_refs': [str(self.root / f'cycles/{cycle["id"]:03d}/comparison.json')]}
+        if cycle.get('screening'):
+            record['screening'] = cycle['screening']
         if not cycle.get('same_method_replication'):
             record['comparison'] = comparison
         else:
@@ -776,8 +978,12 @@ class RSICampaign:
                         if pending:
                             if not self.execute(pending[0]): break
                         else:
-                            if self.finish_checkpoint(cycle):
+                            if 'efficiency' in self.settings and cycle.get('evaluation_stage', 'screen') == 'screen':
+                                self.finish_screen(cycle)
+                            elif self.finish_checkpoint(cycle):
                                 self.finish_cycle(cycle)
+                    elif cycle['phase'] == 'confirm_prepare':
+                        self.prepare_evaluation(cycle)
                 elif phase == 'final_validation':
                     b = next(b for b in self.state['batches'] if b['id'] == self.state['final_batch'])
                     if fingerprint(self.model(b['model_id'])) != self.state['frozen']['policy_sha256']:
@@ -831,8 +1037,9 @@ def parser():
         mode = q.add_mutually_exclusive_group(required=True)
         mode.add_argument('--real', action='store_true')
         mode.add_argument('--simulate', action='store_true')
-        q.add_argument('--config', type=Path, default=ROOT / 'config.rsi.yaml')
+        q.add_argument('--config', type=Path, default=ROOT / 'config.rsi.efficient.yaml')
         q.add_argument('--seed-session', type=Path, action='append')
+        q.add_argument('--seed-campaign', type=Path, action='append', help='导入已停止 RSI 中完整 A 采集，不导入 B 评价')
         q.add_argument('--provider', choices=['chatgpt', 'api', 'deterministic', 'mock'])
         q.add_argument('--memory-mode', choices=['recursive', 'fixed', 'none'])
         q.add_argument('--task-id')
@@ -884,12 +1091,16 @@ def main(argv=None, *, input_fn=input, output=print, executor=None, proposer=Non
                 old = json.loads((root / 'rsi.json').read_text())['settings']
                 if bool(args.simulate) != bool(old.get('simulate')):
                     raise ValueError('续跑不能转换模拟/实机模式')
-                if any(getattr(args, k) is not None for k in ('seed_session', 'provider', 'memory_mode', 'task_id', 'problem')):
+                if any(getattr(args, k) is not None for k in ('seed_session', 'seed_campaign', 'provider', 'memory_mode', 'task_id', 'problem')):
                     raise ValueError('续跑只需 --out 和 --real/--simulate，不能覆盖设置')
             else:
                 s = load_settings(args.config)
                 s['simulate'] = bool(args.simulate)
-                if args.seed_session: s['seed_sessions'] = [str(v.expanduser().resolve()) for v in args.seed_session]
+                seeds = [str(v.expanduser().resolve()) for v in (args.seed_session or [])]
+                for source in args.seed_campaign or []:
+                    seeds.extend(campaign_seed_sessions(source))
+                if seeds:
+                    s['seed_sessions'] = list(dict.fromkeys(seeds))
                 if args.provider: s['provider']['backend'] = args.provider
                 if args.memory_mode: s['memory']['mode'] = args.memory_mode
                 if args.task_id: s['task_id'] = args.task_id

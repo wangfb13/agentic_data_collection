@@ -60,7 +60,7 @@ def _ast(node, depth=0, count=None):
 
 def validate_method(method, *, known_refs=None, parent_ids=None):
     required = {'name', 'parent_id', 'hypothesis', 'applicability', 'score', 'sampling', 'evidence_refs', 'expected_outcome'}
-    if not isinstance(method, dict) or not required <= set(method) or set(method) - required - {'schema', 'method_id'}:
+    if not isinstance(method, dict) or not required <= set(method) or set(method) - required - {'schema', 'method_id', 'repeat_justification'}:
         raise ValueError('method has missing or unknown fields; controller/safety changes are forbidden')
     for name in ('name', 'hypothesis', 'applicability', 'expected_outcome'):
         if not _text(method[name], 160 if name == 'name' else 4000):
@@ -87,6 +87,10 @@ def validate_method(method, *, known_refs=None, parent_ids=None):
     if any(b-a < .5-1e-9 for a,b in zip(sorted(extra), sorted(extra)[1:])):
         raise ValueError('extra_offsets_mm distinct spacing must be >=0.5 mm')
     result = {k: deepcopy(method[k]) for k in required}
+    if 'repeat_justification' in method:
+        if not _text(method['repeat_justification'], 1000):
+            raise ValueError('repeat_justification must be a bounded nonempty explanation')
+        result['repeat_justification'] = method['repeat_justification']
     result['score'] = _ast(method['score'])
     result['sampling'] = {'step_mm': float(sample['step_mm']), 'extra_offsets_mm': sorted(map(float, extra)),
                           'max_reps_per_cell': cap, 'diversity_mm': float(sample['diversity_mm'])}
@@ -236,7 +240,44 @@ def cell_features(report, *, scope, step_mm=1., extra_offsets_mm=()):
             'nominal_spacing_caveat':'Requested offsets are not a claim of achieved TCP precision.'}
 
 
-def select_cells(method, report, *, scope, trial_budget, seed=0):
+def historical_coverage(report):
+    """Count distinct, recorded A trials by exact nominal position and bottle.
+
+    This is a coverage hint, not a claim that nearby touch images are identical.
+    Development/final B evaluations are never imported as A training coverage.
+    """
+    counts = Counter()
+    kinds = Counter()
+    seen = set()
+    for item in report.get('evidence', {}).get('sessions', []):
+        if not isinstance(item, dict) or not item.get('path') or item.get('role') in ('validation', 'frozen_validation', 'final_validation'):
+            continue
+        root = Path(item['path']).resolve()
+        if str(root) in seen:
+            continue
+        seen.add(str(root))
+        for path in (root / 'trials').glob('*/meta.json'):
+            try:
+                row = json.loads(path.read_text())
+                status = json.loads((path.parent / 'recording_status.json').read_text())
+            except (OSError, ValueError):
+                continue
+            if (row.get('cond') != 'A' or row.get('kind') not in ('scan', 'zero_monitor') or not row.get('complete')
+                    or not row.get('recording_complete') or not status.get('complete')
+                    or row.get('label') in (None, 'invalid') or row.get('status') == 'skipped_bound'
+                    or not _num(row.get('delta_mm')) or not _text(row.get('bottle'), 128)):
+                continue
+            counts[(float(row['delta_mm']), row['bottle'])] += 1
+            kinds[(float(row['delta_mm']), row['kind'])] += 1
+    by_position = defaultdict(dict)
+    for (offset, bottle), count in counts.items():
+        by_position[offset][bottle] = count
+    return [{'offset_mm': x, 'bottles': bottles, 'total': sum(bottles.values()),
+             'scan': kinds[(x, 'scan')], 'zero_monitor': kinds[(x, 'zero_monitor')]}
+            for x, bottles in sorted(by_position.items())]
+
+
+def select_cells(method, report, *, scope, trial_budget, seed=0, prior_counts=None, efficiency=None):
     method = validate_method(method)
     if type(trial_budget) is not int or trial_budget < 2 or trial_budget % 2:
         raise ValueError('trial_budget must be a positive even number; light/heavy are balanced')
@@ -245,17 +286,40 @@ def select_cells(method, report, *, scope, trial_budget, seed=0):
     sample = method['sampling']
     data = cell_features(report, scope=scope, step_mm=sample['step_mm'], extra_offsets_mm=sample['extra_offsets_mm'])
     rng = random.Random(seed)
-    ranked = [{'offset_mm':c['offset_mm'], 'score':_score(method['score'],c['features']), 'tie':rng.random()}
-              for c in data['cells']]
+    efficiency = efficiency or {}
+    previous = Counter()
+    for key, value in (prior_counts or {}).items():
+        if not _num(key, -25, 25) or type(value) is not int or value < 0 or value % 2:
+            raise ValueError('prior counts must contain finite offsets and nonnegative even counts')
+        previous[float(key)] = value
+    default_cap = efficiency.get('max_reps_per_cell', sample['max_reps_per_cell'])
+    override_cap = efficiency.get('max_override_reps_per_cell', default_cap)
+    if type(default_cap) is not int or type(override_cap) is not int or override_cap < default_cap or override_cap % 2:
+        raise ValueError('whole-cycle default and justified exception caps must be even integers')
+    permitted = override_cap if method.get('repeat_justification') else default_cap
+    cap = min(sample['max_reps_per_cell'], permitted)
+    if type(cap) is not int or cap < 2 or cap % 2:
+        raise ValueError('whole-cycle repetition cap must be a positive even number')
+    weight = efficiency.get('coverage_weight', 0.)
+    if not _num(weight, 0, 10):
+        raise ValueError('coverage_weight must be finite in [0,10]')
+    radius = efficiency.get('coverage_radius_mm', .499999999)
+    if not _num(radius, 0, 10):
+        raise ValueError('coverage_radius_mm must be finite in [0,10]')
+    history = historical_coverage(report) if weight else []
+    ranked = [{'offset_mm': c['offset_mm'],
+               'score': _score(method['score'], c['features']) + weight / (1. + sum(h['total'] for h in history if abs(h['offset_mm'] - c['offset_mm']) <= radius)),
+               'tie': rng.random()} for c in data['cells']]
     selected = Counter()
     for _ in range(trial_budget//2):
-        available = [c for c in ranked if selected[c['offset_mm']] < sample['max_reps_per_cell'] and
-            (selected[c['offset_mm']] or all(abs(c['offset_mm']-p)>=sample['diversity_mm']-1e-9 for p in selected))]
+        available = [c for c in ranked if selected[c['offset_mm']] + previous[c['offset_mm']] < cap and
+            (selected[c['offset_mm']] or previous[c['offset_mm']] or
+             all(abs(c['offset_mm']-p)>=sample['diversity_mm']-1e-9 for p in set(selected) | set(previous)))]
         if not available:
             raise ValueError('Method diversity/repetition constraints cannot fill equal trial budget; revise the method explicitly')
         # Repeated visits are penalized regardless of score sign. This prevents
         # arbitrary negative scores accidentally favoring duplicate acquisition.
-        chosen = max(available, key=lambda c:(c['score']-math.log1p(selected[c['offset_mm']]/2.), c['tie']))
+        chosen = max(available, key=lambda c:(c['score']-math.log1p((selected[c['offset_mm']] + previous[c['offset_mm']])/2.), c['tie']))
         selected[chosen['offset_mm']] += 2
     return [{'offset_mm':x,'reps':n} for x,n in sorted(selected.items())]
 

@@ -1,6 +1,6 @@
 # 药瓶抓取实验：当前功能与操作说明
 
-> **新增 RSI 方法改进入口**：见 [RSI 操作指南](docs/RSI_GUIDE_zh.md) 和 [设计与证据说明](docs/RSI_DESIGN.md)。通过 `rsi run --real --seed-session 旧会话 --out 新目录`，分别保存 ContactPolicy 和采集方法，让 Agent 检索历史经验、提出新规则，再做等预算对照。原 `agentic run` 的批次规划流程保留；只有对照证据通过，方法才晋升，不能把预算结束当作已证明递归改进。
+> **RSI 方法改进入口**：见 [RSI 操作指南](docs/RSI_GUIDE_zh.md) 和 [设计与证据说明](docs/RSI_DESIGN.md)。新任务默认使用精简采集，可用 `rsi run --real --seed-campaign 旧RSI目录 --out 新目录` 复用旧 A 数据、减少重复并进行分阶段对照。原 `agentic run` 和已冻结 RSI 会话保持原协议；只有独立确认通过才晋升方法，预算结束不代表已证明递归改进。
 
 > **Agentic 现在由 Agent 直接制定下一批采集计划**：见 [操作指南](AGENTIC_GUIDE_zh.md) 和 [自拟计划协议与停止条件](docs/AGENTIC_PLANNING_20261030.md)。Agent 根据实际数据提出 A/B 条件、各点偏移与次数、假设、证据和预期结果；本地检查后执行，再分析并更新。原手动 E1/E2 和 setup/run 保留。
 
