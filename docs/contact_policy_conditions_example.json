@@ -1,0 +1,146 @@
+{
+  "example_source": "离线合成测试实际生成；非实机模型，artifact_excerpt 仅为结构节选，不能作为完整模型加载",
+  "artifact_excerpt": {
+    "schema": "contact_policy_v1",
+    "family": "numpy_tanh_mlp_ensemble",
+    "model_id": "55f9cbe8a29ac55b60bb",
+    "integrity_sha256": "55f9cbe8a29ac55b60bb76045bf34f63524bb089fb501060161b39d31991f3a5",
+    "skill_conditions": {
+      "version": "contact_policy_conditions_v1",
+      "thresholds": {
+        "tol_mm": 2.0,
+        "probe_stable_s": 0.2,
+        "probe_frames": 5
+      },
+      "scope": {
+        "axis": "a",
+        "rotation": false,
+        "regrasp_releases_gripper": true,
+        "required_context": {
+          "object_supported": true,
+          "airborne": false,
+          "unsafe_recovery": false,
+          "frame_compatible": true,
+          "motion_bounds_ok": true,
+          "observation_current": true,
+          "timed_out": false,
+          "servo_exhausted": false
+        },
+        "description_zh": "仅在物体有支撑、未提起、原坐标/协议兼容和原运动边界检查通过时使用；仍只沿 a 平移重抓。上下文由调度器核实，模型不能代替这些检查。"
+      },
+      "start": {
+        "evaluator": "valid_probe_learned_decision_outside_tolerance_v1",
+        "active": false,
+        "status": "contact",
+        "bilateral": true,
+        "decision_controller": "contact_policy_v1",
+        "rejected": false,
+        "accepted": false,
+        "error_comparison": "abs(e_mm) > tol_mm",
+        "description_zh": "适用条件通过、当前 PROBE 观测有效且双侧接触，学习模型未拒绝并判断偏差超过容差时，允许开始修正；无接触和贴边仍交给原后备规则。"
+      },
+      "exit": {
+        "evaluator": "stable_probe_learned_decision_within_tolerance_v1",
+        "active": true,
+        "status": "contact",
+        "bilateral": true,
+        "decision_controller": "contact_policy_v1",
+        "rejected": false,
+        "accepted": true,
+        "error_comparison": "abs(e_mm) <= tol_mm",
+        "stability_evidence": "completed_PROBE.valid/stable_start_ns/timestamp_ns/window",
+        "description_zh": "执行中，当前有效 PROBE 已通过原双侧接触稳定检查、此刻仍双侧接触，且模型未拒绝并判断进入容差，才成功退出并交还主策略；无效、失去接触、超时、耗尽均不是成功。"
+      }
+    }
+  },
+  "calls": {
+    "needs_correction": {
+      "result": true,
+      "reason": "correction_required",
+      "model_id": "55f9cbe8a29ac55b60bb",
+      "condition_version": "contact_policy_conditions_v1",
+      "conditions_source": "embedded",
+      "tol_mm": 2.0,
+      "decision": {
+        "valid": true,
+        "action_mm": -5.999068510537494,
+        "uncertainty_mm": 0.0036259421324221913,
+        "ensemble_std_mm": 0.0004095512032272462,
+        "ood_distance": 0.0,
+        "accepted": false,
+        "rejected": false,
+        "e_mm": 5.999068510537494,
+        "delta_mm": -5.999068510537494,
+        "edges": [],
+        "reason": "learned_contact_recovery",
+        "gain": 1.0,
+        "controller": "contact_policy_v1",
+        "model_id": "55f9cbe8a29ac55b60bb"
+      }
+    },
+    "already_centered": {
+      "result": false,
+      "reason": "already_within_tolerance",
+      "model_id": "55f9cbe8a29ac55b60bb",
+      "condition_version": "contact_policy_conditions_v1",
+      "conditions_source": "embedded",
+      "tol_mm": 2.0,
+      "decision": {
+        "valid": true,
+        "action_mm": -0.0022585374481922916,
+        "uncertainty_mm": 0.0036461488874806685,
+        "ensemble_std_mm": 0.000429757958285723,
+        "ood_distance": 0.0,
+        "accepted": true,
+        "rejected": false,
+        "e_mm": 0.0022585374481922916,
+        "delta_mm": 0.0,
+        "edges": [],
+        "reason": "within_tolerance",
+        "gain": 1.0,
+        "controller": "contact_policy_v1",
+        "model_id": "55f9cbe8a29ac55b60bb"
+      }
+    },
+    "successful_exit": {
+      "result": true,
+      "reason": "stable_within_tolerance",
+      "model_id": "55f9cbe8a29ac55b60bb",
+      "condition_version": "contact_policy_conditions_v1",
+      "conditions_source": "embedded",
+      "tol_mm": 2.0,
+      "decision": {
+        "valid": true,
+        "action_mm": -0.0022585374481922916,
+        "uncertainty_mm": 0.0036461488874806685,
+        "ensemble_std_mm": 0.000429757958285723,
+        "ood_distance": 0.0,
+        "accepted": true,
+        "rejected": false,
+        "e_mm": 0.0022585374481922916,
+        "delta_mm": 0.0,
+        "edges": [],
+        "reason": "within_tolerance",
+        "gain": 1.0,
+        "controller": "contact_policy_v1",
+        "model_id": "55f9cbe8a29ac55b60bb"
+      }
+    },
+    "contact_lost": {
+      "result": false,
+      "reason": "bilateral_contact_missing",
+      "model_id": "55f9cbe8a29ac55b60bb",
+      "condition_version": "contact_policy_conditions_v1",
+      "conditions_source": "embedded",
+      "tol_mm": 2.0
+    },
+    "exhausted": {
+      "result": false,
+      "reason": "context_not_satisfied:servo_exhausted",
+      "model_id": "55f9cbe8a29ac55b60bb",
+      "condition_version": "contact_policy_conditions_v1",
+      "conditions_source": "embedded",
+      "tol_mm": 2.0
+    }
+  }
+}

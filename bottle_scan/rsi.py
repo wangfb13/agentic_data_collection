@@ -340,9 +340,14 @@ class RSICampaign:
         training_settings = copy.deepcopy(self.settings)
         if self.state.get('frozen_validation_groups'):
             training_settings.setdefault('contact_policy', {})['frozen_validation_groups'] = self.state['frozen_validation_groups'][:]
-        model = train_contact_policy(roots, training_settings)
+        model = train_contact_policy(roots, training_settings, execution_config=self.cfg)
         path = f"models/{model['model_id']}.json"
-        atomic_json(self.root / path, model)
+        destination = self.root / path
+        if destination.exists():
+            if json.loads(destination.read_text()) != model:
+                raise ValueError('模型的内容寻址文件已存在但内容不同')
+        else:
+            atomic_json(destination, model)
         self.state['models'][model['model_id']] = path
         self.save()
         if not model.get('usable_for_B'):
@@ -881,6 +886,21 @@ class RSICampaign:
 
     def prepare_final(self):
         from .agentic import make_plan
+        from .contact_policy import with_skill_conditions
+        # A historical model may predate callable skill conditions. Freeze a
+        # new content-addressed copy with the same weights and provenance; do
+        # not rewrite its historical artifact or train on final evaluation.
+        model = with_skill_conditions(self.model(self.state['current_policy_id']), self.cfg)
+        if model['model_id'] != self.state['current_policy_id']:
+            path = f"models/{model['model_id']}.json"
+            destination = self.root / path
+            if destination.exists():
+                if json.loads(destination.read_text()) != model:
+                    raise ValueError('条件模型的内容寻址文件已存在但内容不同')
+            else:
+                atomic_json(destination, model)
+            self.state['models'][model['model_id']] = path
+            self.state['current_policy_id'] = model['model_id']
         v = self.settings['final_validation']
         plan = make_plan({'cond': 'mixed', 'cells': [{'offset_mm': d, 'reps': v['reps']} for d in v['offsets_mm']]},
                          self.cfg, seed=self.settings['seed'], validation=True)
@@ -888,7 +908,8 @@ class RSICampaign:
         self.state['final_batch'] = b['id']
         self.state['frozen'] = {'model_id': self.state['current_policy_id'],
                                 'method_id': self.state['incumbent_method_id'], 'cells': self.cells('final_validation'),
-                                'policy_sha256': fingerprint(self.model(self.state['current_policy_id'])),
+                                'policy_sha256': fingerprint(model),
+                                'skill_conditions': copy.deepcopy(model['skill_conditions']),
                                 'statement': 'Final A/B data never enter training, method choice or experience promotion'}
         self.state['phase'] = 'final_validation'
         self.save()
@@ -906,6 +927,28 @@ class RSICampaign:
                  '| 轮次 | 旧方法 | 新方法 | 评估 |', '|---|---|---|---|']
         for c in s['cycles']:
             lines.append(f"| {c['id']} | {c['branches']['old']['method_id']} | {c['branches']['new']['method_id']} | {json.dumps(c.get('result', {'status': c['phase']}), ensure_ascii=False)} |")
+        policy_id = s.get('frozen', {}).get('model_id') or s.get('current_policy_id')
+        if policy_id:
+            from .contact_policy import with_skill_conditions
+            try:
+                model = self.model(policy_id)
+                legacy = 'skill_conditions' not in model
+                conditions = with_skill_conditions(model, self.cfg)['skill_conditions']
+                thresholds = conditions['thresholds']
+                lines += ['', 'ContactPolicy 产物：',
+                          f"模型：{model.get('family')}；{s['models'][policy_id]}",
+                          '作用：根据两指当前触觉描述子，预测沿固定 a 轴返回 T0 的纠正量；已有无接触、停滞和贴边后备规则保持不变。',
+                          f"条件版本：{conditions['version']}；纠正容差：{thresholds['tol_mm']:g} mm；"
+                          f"PROBE 稳定时间：{thresholds['probe_stable_s']:g} s；每指 DD 窗口：{thresholds['probe_frames']} 帧。",
+                          '何时调用：' + conditions['start']['description_zh'],
+                          '何时成功退出：' + conditions['exit']['description_zh'],
+                          '拒绝、无效观测、接触丢失、超时和重试耗尽均不是成功退出。']
+                if legacy:
+                    lines += ['这是旧模型的内存兼容说明，历史模型文件未写回；最终冻结时保存带条件的新版本。']
+            except (ValueError, KeyError, TypeError, OSError) as exc:
+                # Reporting a damaged or incompatible artifact must not hide
+                # the original pause/error or claim it is usable.
+                lines += ['', 'ContactPolicy 条件不可用：' + str(exc)]
         if s.get('final_result'):
             lines += ['', '最终独立验证：', '```json', json.dumps(s['final_result'], ensure_ascii=False, indent=2), '```']
         if s.get('last_error'):
@@ -1066,10 +1109,13 @@ def main(argv=None, *, input_fn=input, output=print, executor=None, proposer=Non
             return 0
         if args.command == 'train':
             from .contact_policy import train_contact_policy
+            from .e1e2_core import load_settings as load_execution_settings
             settings = load_settings(args.config)
             settings['simulate'] = args.simulate
-            model = train_contact_policy(args.session, settings, out=args.out)
-            output(json.dumps({k: model.get(k) for k in ('model_id', 'usable_for_B', 'validation', 'reason')}, ensure_ascii=False, indent=2))
+            execution_config = load_execution_settings(settings['base_config'])
+            model = train_contact_policy(args.session, settings, out=args.out,
+                                         execution_config=execution_config)
+            output(json.dumps({k: model.get(k) for k in ('model_id', 'usable_for_B', 'validation', 'reason', 'skill_conditions')}, ensure_ascii=False, indent=2))
             return 0 if model.get('usable_for_B') else 2
         root = args.out.expanduser().resolve()
         if args.command == 'status':
