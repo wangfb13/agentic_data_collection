@@ -70,8 +70,16 @@ class RSITests(unittest.TestCase):
         final_roots = c.roots([c.state['final_batch']])
         for branch in cycle['branches'].values():
             model = c.model(branch['model_id'])
+            self.assertEqual(model['skill_conditions']['version'], 'contact_policy_conditions_v1')
+            self.assertEqual(model['skill_conditions']['thresholds']['tol_mm'], c.cfg['servo']['tol_mm'])
             self.assertFalse(set(model['source_sessions']) & set(final_roots + c.roots(branch['evaluation'])))
         self.assertTrue((c.root / 'REPORT.md').exists())
+        frozen_model = c.model(c.state['frozen']['model_id'])
+        self.assertEqual(c.state['frozen']['skill_conditions'], frozen_model['skill_conditions'])
+        self.assertFalse(set(frozen_model['source_sessions']) & set(final_roots))
+        report = (c.root / 'REPORT.md').read_text()
+        for phrase in ('模型：', '何时调用：', '何时成功退出：', 'contact_policy_conditions_v1'):
+            self.assertIn(phrase, report)
         self.assertTrue(list((c.root / 'prompt_buffer').glob('*_decision.json')))
         self.assertLessEqual(c.spent(), c.settings['budget']['max_trials'])
         no_hardware = Mock(side_effect=AssertionError('completed run must not connect'))

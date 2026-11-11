@@ -117,6 +117,8 @@ bash run_on_5090.sh rsi train \
 
 查看 `usable_for_B`、`validation` 和模型文件的 `blocking_reasons`。`usable_for_B: true` 表示通过当前离线几何预测检查，真正能否提高抓取成功率仍需独立实机 B 评估。
 
+新模型 JSON 同时保存 `skill_conditions`：何时调用、何时成功退出、实际容差和条件版本。最终报告也直接展示这三项。外部调度器可调用无运动副作用的 `ContactPolicy.should_start()` / `should_exit()`，输入现有 PROBE 结果和经过检查的上下文；接口、完整条件和旧模型兼容方式见 [ContactPolicy 调用与退出](CONTACT_POLICY_CONDITIONS.md)。独立训练请使用新的 `--out` 文件名，不覆盖历史模型。
+
 当前 ContactPolicy 是小型 MLP 集成，默认输入两指当前 PROBE 描述子，包括质心、外框、面积与主轴角；可以配置数值 DD 的 4×4 深度池化。**当前模型没有接入六维力、腕部图像或时间历史作为学习输入，也没有实现 LeRobot 数据导出。** 这些数据的原始记录继续保存，但“已保存”不代表“已作为模型输入”。
 
 ## 6. 三种记忆方式与新任务
