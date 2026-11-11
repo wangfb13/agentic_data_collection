@@ -229,8 +229,8 @@ hardware:
   backend: public_ros
   bridge_module: bridge_ros_public
   sensor_serials:
-    left: X2620410318
-    right: X2620410347
+    left: X26040505
+    right: X26040305
   pose_unit: m
   quaternion_order: xyzw
   base_frame: base_link
@@ -271,8 +271,8 @@ hardware:
       dd_address: tcp://192.168.9.11:39030
       wrench_address: tcp://192.168.9.11:39020
       serials:
-        left: X2620410318
-        right: X2620410347
+        left: X26040505
+        right: X26040305
       force_conversion:
         moment_unit: sdk
         normal_axis: TODO_confirm_Fx_Fy_Fz_index_0_1_2

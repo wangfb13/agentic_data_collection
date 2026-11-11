@@ -82,6 +82,7 @@ def _axis(meta):
 def _load(roots, settings):
     sessions, trials, issues = [], [], []
     seen = set()
+    physical_seen = {}
     for root in roots:
         root = Path(root).expanduser().resolve()
         if str(root) in seen:
@@ -112,12 +113,23 @@ def _load(roots, settings):
                     status = p.parent / 'recording_status.json'
                     recorded = bool(row.get('recording_complete') and status.exists() and
                                     json.loads(status.read_text()).get('complete'))
+                    canonical_trial = str(p.parent.resolve())
+                    if meta.get('skill_label_review'):
+                        from .skill_label_review import verify_view_row
+                        canonical_session, canonical_trial = verify_view_row(root,meta,row,p)
+                        row['canonical_session'] = canonical_session
+                        row['canonical_trial_path'] = canonical_trial
+                    if canonical_trial in physical_seen:
+                        issues.append('duplicate physical trial evidence: ' + canonical_trial +
+                                      ' appears in both ' + physical_seen[canonical_trial] + ' and ' + str(p.parent))
+                        continue
+                    physical_seen[canonical_trial] = str(p.parent)
                     row.update(session=str(root), trial_path=str(p.parent),
                                metadata_sha256=hashlib.sha256(raw).hexdigest(),
                                archived_attempt=folder == 'interrupted', recording_verified=recorded,
                                session_meta=meta, session_role=sess['role'])
                     trials.append(row)
-                except (OSError, ValueError) as exc:
+                except (OSError, ValueError, KeyError, TypeError) as exc:
                     issues.append(f'{p}: cannot read trial evidence: {exc}')
     return sessions, trials, issues
 
@@ -279,7 +291,8 @@ def _observations(rows, reference, settings):
             'planned_delta_mm': float(row['delta_mm']), 'measurement': measured,
             'bottle': row.get('bottle', 'unknown'), 'repeat': row.get('repeat'),
             'kind': row.get('kind'), 'descriptors': row['probe_initial']['descriptors'],
-            'group': f"{row['session']}|{row.get('bottle')}|{row.get('repeat') if row.get('repeat') is not None else 'monitor_' + str(row.get('id'))}",
+            'canonical_session': row.get('canonical_session',row['session']),
+            'group': f"{row.get('canonical_session',row['session'])}|{row.get('bottle')}|{row.get('repeat') if row.get('repeat') is not None else 'monitor_' + str(row.get('id'))}",
         })
     return observations, dict(excluded)
 

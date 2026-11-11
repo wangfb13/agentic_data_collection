@@ -228,6 +228,141 @@ class IncrementalSplitTests(unittest.TestCase):
         self.assertFalse(set(info['training_groups']) & set(info['validation_groups']))
 
 
+class JointBRecoveryTests(EvidenceFixture):
+    """Successful B actions train joint recovery only with actual target evidence."""
+    def make_joint_B(self):
+        root = self.make('B', cond='B', offsets=(6.,), reps=2, role='development',
+            patch_cfg={'recovery_skill': {'target_definition': {'id': 'target_v1'}}})
+        def transition(row):
+            final = copy.deepcopy(row['probe_initial'])
+            final.update(timestamp_ns=2000, descriptors=[desc(60), desc(55)])
+            final['measured_tcp_mm'][0][3] = 0.
+            decision = {'recovery': {'action': {'axis': 'a', 'delta_mm': -6.}}}
+            row.update(probe_final=final, regrasps=1,
+                probe_regrasps=[{'probe': final, 'receipt': {'applied': True, 'action_mm': -6., 'completed_ns': 1500}}],
+                correction_history=[{'delta_mm': -6., 'applied_delta_mm': -6., 'timestamp_ns': 1200, 'skill_decision': decision},
+                                    {'accepted': True, 'terminal': True}],
+                skill_ground_truth={'source': 'operator_review_of_observed_contact',
+                    'target_definition_id': 'target_v1', 'independent_of_experimental_offset': True,
+                    'initial_class': 'needs_recovery', 'final_target_reached': True},
+                skill_handoff={'hand_back': True, 'completed': True},
+                skill_observations=[{'phase': 'skill_decision', 'skill_outputs': decision,
+                    'observation': {'timestamp_ns': 1000, 'descriptors': copy.deepcopy(row['probe_initial']['descriptors']),
+                                    'context': {'target_definition_id': 'target_v1'}}},
+                    {'phase': 'skill_decision', 'skill_outputs': {'exit': {'hand_back': True, 'completed': True}},
+                     'observation': {'timestamp_ns': 2000, 'descriptors': copy.deepcopy(final['descriptors']),
+                                     'context': {'target_definition_id': 'target_v1'}}}],
+                skill_window_labels=[{'timestamp_ns': 2000, 'target_reached': True,
+                    'source': 'operator_review_of_observed_contact', 'independent_of_experimental_offset': True,
+                    'target_definition_id': 'target_v1'}])
+        self.mutate(root, transition)
+        return root
+
+    def extract(self, root):
+        from bottle_scan.agentic_learning import _load
+        from bottle_scan.contact_policy import _B_observations, DEFAULTS
+        cfg = policy_settings(); cfg['target_definition_id'] = 'target_v1'
+        sessions, rows, issues = _load([root], cfg)
+        self.assertFalse(issues)
+        return _B_observations(rows, sessions[0]['meta'], cfg, DEFAULTS)
+
+    def test_joint_success_adds_actual_decision_observation(self):
+        root = self.make_joint_B()
+        def confirmation(row):
+            observation = row['skill_observations'][0]['observation']
+            observation.update(timestamp_ns=1100, descriptors=[desc(43), desc(38)])
+        self.mutate(root, confirmation)
+        rows, excluded = self.extract(root)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]['descriptors'][0]['centroid_px'][0], 43.)
+        self.assertEqual(rows[0]['target_action_mm'], -6.)
+        self.assertFalse(excluded)
+
+    def test_joint_contact_success_survives_downstream_force_failure_but_legacy_does_not(self):
+        root=self.make_joint_B()
+        self.mutate(root,lambda row:row.update(status='force_not_reached',lifted=False,hold_complete=False))
+        rows,excluded=self.extract(root)
+        self.assertEqual(len(rows),2)
+        self.assertFalse(excluded)
+        from bottle_scan.agentic_learning import _load
+        from bottle_scan.contact_policy import _B_observations,DEFAULTS
+        cfg=policy_settings()
+        sessions,raw,issues=_load([root],cfg)
+        legacy,rejected=_B_observations(raw,sessions[0]['meta'],cfg,DEFAULTS)
+        self.assertEqual(legacy,[])
+        self.assertEqual(rejected['B_not_reliable_success'],2)
+        for label in ('tipped','tilted','pushed','invalid'):
+            self.mutate(root,lambda row:row.update(label=label))
+            rows,rejected=self.extract(root)
+            self.assertEqual(rows,[])
+            self.assertEqual(rejected['B_not_reliable_success'],2)
+
+    def test_lift_success_does_not_replace_independent_contact_target_labels(self):
+        root = self.make_joint_B()
+        original = {p:p.read_text() for p in (root/'trials').glob('*/meta.json')}
+        changes = [
+            lambda r: r['skill_ground_truth'].update(initial_class='already_normal'),
+            lambda r: r['skill_ground_truth'].update(final_target_reached=False),
+            lambda r: r['skill_ground_truth'].update(independent_of_experimental_offset=False),
+            lambda r: r['skill_ground_truth'].update(target_definition_id='other'),
+            lambda r: r['skill_handoff'].update(hand_back=False),
+            lambda r: r['skill_handoff'].update(completed=False),
+        ]
+        for change in changes:
+            for p, content in original.items(): p.write_text(content)
+            self.mutate(root, change)
+            rows, excluded = self.extract(root)
+            self.assertEqual(rows, [])
+            self.assertEqual(excluded['B_joint_target_or_handoff_unverified'], 2)
+
+    def test_bad_receipt_stale_probe_wrong_axis_or_missing_decision_never_train(self):
+        root = self.make_joint_B()
+        original = {p:p.read_text() for p in (root/'trials').glob('*/meta.json')}
+        changes = [
+            lambda r: r['probe_regrasps'][0]['receipt'].update(applied=False),
+            lambda r: r['probe_regrasps'][0]['receipt'].update(action_mm=-5.),
+            lambda r: r['probe_regrasps'][0]['receipt'].update(completed_ns=2000),
+            lambda r: r['probe_regrasps'][0]['receipt'].update(completed_ns=1100),
+            lambda r: r['correction_history'][0]['skill_decision']['recovery']['action'].update(axis='l'),
+            lambda r: r.update(skill_observations=r['skill_observations'][1:]),
+            lambda r: r['skill_observations'][0]['observation']['context'].update(target_definition_id='other'),
+        ]
+        for change in changes:
+            for p, content in original.items(): p.write_text(content)
+            self.mutate(root, change)
+            rows, excluded = self.extract(root)
+            self.assertEqual(rows, [])
+            self.assertEqual(excluded['B_joint_receipt_or_fresh_observation_unverified'], 2)
+
+    def test_joint_unknown_or_independent_role_never_trains(self):
+        root = self.make_joint_B()
+        path = root/'session_meta.json'; meta = json.loads(path.read_text())
+        for role in ('exploration', 'independent', 'final_validation'):
+            meta['agentic']['role'] = role; path.write_text(json.dumps(meta))
+            rows, excluded = self.extract(root)
+            self.assertEqual(rows, [])
+            self.assertTrue(excluded)
+
+    def test_global_target_true_cannot_override_unknown_conflicting_or_unmatched_terminal_window(self):
+        root = self.make_joint_B()
+        original = {p:p.read_text() for p in (root/'trials').glob('*/meta.json')}
+        changes = [
+            lambda r: r['skill_window_labels'][0].update(target_reached=None),
+            lambda r: r['skill_window_labels'][0].update(target_reached=False),
+            lambda r: r['skill_window_labels'][0].update(timestamp_ns=1999),
+            lambda r: r['skill_window_labels'][0].update(target_definition_id='other'),
+            lambda r: r['skill_window_labels'][0].update(independent_of_experimental_offset=False),
+            lambda r: r['skill_window_labels'].append({**r['skill_window_labels'][0], 'target_reached': False}),
+            lambda r: r['skill_observations'][-1]['skill_outputs']['exit'].update(completed=False),
+        ]
+        for change in changes:
+            for p, content in original.items(): p.write_text(content)
+            self.mutate(root, change)
+            rows, excluded = self.extract(root)
+            self.assertEqual(rows, [])
+            self.assertEqual(excluded['B_joint_target_or_handoff_unverified'], 2)
+
+
 if __name__ == '__main__':
     unittest.main()
 

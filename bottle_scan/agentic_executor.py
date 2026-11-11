@@ -24,6 +24,10 @@ from .session import atomic_json, fingerprint, plain
 def _correction(fit, settings):
     if not isinstance(fit, dict):
         raise ValueError('条件 B 需要有效且已冻结的触觉模型')
+    if fit.get('schema') in ('learned_a_skill_v1', 'learned_a_skill_set_v1'):
+        from .learned_skill import LearnedSkillModel
+        LearnedSkillModel(fit)  # Validate all three frozen components before any I/O.
+        return _correction(fit['recovery_model'], settings)
     if fit.get('schema') == 'contact_policy_v1':
         from .contact_policy import ContactPolicy
         return ContactPolicy(fit, settings)
@@ -287,15 +291,20 @@ class BatchRunner(Runner):
             return
         baseline = self.context.setdefault('zero_baseline_px', np.mean([s['centroids_px'] for s in samples[:3]], axis=0).tolist())
         errors = None
-        if self.fit and self.fit.get('usable_for_B'):
-            if self.fit.get('schema') == 'agentic_fit_v1':
+        drift_fit = self.fit
+        if drift_fit and drift_fit.get('schema') in ('learned_a_skill_v1', 'learned_a_skill_set_v1'):
+            drift_fit = drift_fit.get('recovery_model')
+        if drift_fit and drift_fit.get('schema') == 'contact_policy_v1':
+            drift_fit = drift_fit.get('fallback_fit')
+        if drift_fit and drift_fit.get('usable_for_B'):
+            if drift_fit.get('schema') == 'agentic_fit_v1':
                 from .agentic_learning import finger_estimate
-                before = [finger_estimate(f, p) for f, p in zip(self.fit['fingers'], baseline)]
-                after = [finger_estimate(f, p) for f, p in zip(self.fit['fingers'], values)]
+                before = [finger_estimate(f, p) for f, p in zip(drift_fit['fingers'], baseline)]
+                after = [finger_estimate(f, p) for f, p in zip(drift_fit['fingers'], values)]
                 if all(v is not None for v in before + after):
                     errors = [float(b-a) for a, b in zip(before, after)]
             else:
-                errors = [float((values[i][0 if f['coordinate'] == 'u' else 1] - baseline[i][0 if f['coordinate'] == 'u' else 1]) / f['slope_px_per_mm']) for i, f in enumerate(self.fit['fingers'])]
+                errors = [float((values[i][0 if f['coordinate'] == 'u' else 1] - baseline[i][0 if f['coordinate'] == 'u' else 1]) / f['slope_px_per_mm']) for i, f in enumerate(drift_fit['fingers'])]
         if errors is None:
             self.current['zero_drift'] = {'checked': False, 'reason': 'no_valid_mm_mapping_for_baseline_and_current', 'baseline_centroids_px': baseline, 'current_centroids_px': values}
             return
@@ -337,6 +346,8 @@ class BatchRunner(Runner):
         for item in self.batch_plan:
             if item['id'] in done:
                 continue
+            if self.args.limit is not None and count >= self.args.limit:
+                break
             if deadline_reached(self.context):
                 timed_out = True
                 self.quit = True
@@ -361,15 +372,36 @@ class BatchRunner(Runner):
 
 
 def execute_batch(root, plan, cfg, fit, context, *, simulate=False, ask=input, say=print,
-                  authorize=True, hardware_factory=None):
+                  authorize=True, hardware_factory=None, limit=None, step=None):
     """Execute one frozen batch.  Completed batches never connect to hardware.
 
     ``authorize=False`` is effective only with ``continuous_campaign=True`` in
     the context issued by the still-running, preauthorized campaign process.
     A caller resuming after exit must pass authorize=True again.
     """
+    if limit is not None and (type(limit) is not int or limit < 1):
+        raise ValueError('limit must be a positive number of newly completed trial attempts')
+    if step is not None and type(step) is not bool:
+        raise ValueError('step must be boolean')
+    if simulate and (limit is not None or step is not None):
+        raise ValueError('per-invocation limit/step is supported by the guarded collection adapter only')
     root = Path(root).expanduser().resolve()
     validate_plan(plan, cfg, fit)
+    if cfg.get('recovery_skill'):
+        from .recovery_skill import RecoverySkill, _settings
+        spec = cfg['recovery_skill']
+        _settings(spec.get('runtime'), cfg['servo'])
+        if spec.get('mode', 'deployment') not in ('development', 'deployment'):
+            raise ValueError('invalid recovery skill runtime mode')
+        if any(item['cond'] == 'B' for item in plan):
+            RecoverySkill(fit, cfg['servo'], spec.get('runtime'), spec.get('certificate'),
+                          mode=spec.get('mode', 'deployment'))
+            if fit.get('schema') in ('learned_a_skill_v1', 'learned_a_skill_set_v1') and (
+                    spec.get('target_definition', {}).get('id') != fit.get('target_definition_id')):
+                raise ValueError('learned skill target definition differs from collection protocol')
+            from .agentic_learning import _hash, _signature
+            if fit.get('signature') and fit['signature'] != _hash(_signature({'config': cfg, 'simulated': bool(simulate)})):
+                raise ValueError('skill model force/tactile/axis/hardware protocol differs from execution config')
     context = copy.deepcopy(context or {})
     _validate_context(context)
     root.mkdir(parents=True, exist_ok=True)
@@ -392,6 +424,11 @@ def execute_batch(root, plan, cfg, fit, context, *, simulate=False, ask=input, s
         else:
             atomic_json(path, _metadata(root, plan, cfg, fit, context, simulate))
         _validate_context(context)
+        if cfg.get('recovery_skill') and not simulate:
+            from .skill_collection import finish_pending_labels
+            reviewed = finish_pending_labels(root, plan, cfg, fit, context, ask=ask, say=say)
+            if reviewed is not None:
+                return reviewed
         rows = rebuild_summary(root)
         done = {row['id'] for row in rows if row.get('complete')}
         if all(row['id'] in done for row in plan):
@@ -413,9 +450,15 @@ def execute_batch(root, plan, cfg, fit, context, *, simulate=False, ask=input, s
         if hardware_factory is None:
             from .e1e2_hardware import Hardware
             hardware_factory = Hardware
-        args = SimpleNamespace(out=root, cond=plan[0]['cond'], step=bool(cfg.get('agentic', {}).get('step', False)), limit=None)
+        args = SimpleNamespace(out=root, cond=plan[0]['cond'],
+                               step=bool(cfg.get('agentic', {}).get('step', False)) if step is None else step,
+                               limit=limit)
         hw = hardware_factory(cfg)
-        runner = BatchRunner(args, cfg, fit, hw, plan, context, ask=ask, say=say, authorize=authorize)
+        runner_class = BatchRunner
+        if cfg.get('recovery_skill'):
+            from .skill_collection import SkillBatchRunner
+            runner_class = SkillBatchRunner
+        runner = runner_class(args, cfg, fit, hw, plan, context, ask=ask, say=say, authorize=authorize)
         if threading.current_thread() is threading.main_thread():
             def interrupted(signum, frame):
                 raise KeyboardInterrupt('收到信号 ' + str(signum))

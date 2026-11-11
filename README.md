@@ -513,3 +513,6 @@ bash run_on_5090.sh move-tcp --arm right --direction z+ --distance-mm 5 --frame 
 - 本指南描述右臂站点。更换实验臂、TCP、工具或瓶位基准，需要相应设置／验收，不在同一 session 中随意切换。
 
 相关短指南：[日常操作](OPERATOR_GUIDE_zh.md) · [首次设置](docs/FIRST_SETUP.md) · [故障恢复](docs/RECOVERY.md) · [高级工具](docs/ADVANCED.md) · [修改记录](CHANGELOG.md)
+
+
+Agent 主导的技能采集、训练和 A/B 验证见 [技能闭环指南](docs/SKILL_LOOP_GUIDE_zh.md) 和 [状态集合与 Agent 主导决策](docs/AGENT_DIRECTOR_STATE_SET_zh.md)。

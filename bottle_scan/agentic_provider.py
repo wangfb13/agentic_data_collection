@@ -409,6 +409,34 @@ class AgentProvider:
         decision["_meta"] = meta
         return decision
 
+    def direct(self, context):
+        """Choose the experiment lifecycle action, never execute it here.
+
+        The campaign binds evidence IDs, model versions, budgets and physical
+        bounds after this transport-level schema check. No heuristic fallback.
+        """
+        from .skill_director import DIRECTOR_SYSTEM, validate_response
+        if self.backend == "mock":
+            value = {"action": "pause", "reason": "显式 mock 仅验证主导协议，不代替真实 Agent 决策。",
+                     "evidence_refs": (context.get("valid_evidence_refs") or ["mock:offline"])[:1], "plan": None}
+            return dict(validate_response(value), _meta={"backend": "mock", "model": "mock",
+                        "completed": True, "usage": {}, "planning_mode": "director"})
+        try:
+            prompt = json.dumps(context, ensure_ascii=False, sort_keys=True, allow_nan=False)
+        except (ValueError, TypeError):
+            raise ProviderError("Agent 上下文必须是有限数值的 JSON 数据。") from None
+        if len(prompt) > 200_000:
+            raise ProviderError("Agent 上下文过大；请只传任务定义、证据摘要和实验约束。")
+        text, meta = self._infer(DIRECTOR_SYSTEM, prompt)
+        parsed = _strict_json(text, proposal=True)
+        try:
+            decision = validate_response(parsed)
+        except (ValueError, TypeError, KeyError):
+            raise ProposalError("Agent 主导决策不符合 action/reason/evidence_refs/plan 协议。",
+                                code="invalid_director_decision") from None
+        decision["_meta"] = dict(meta, planning_mode="director")
+        return decision
+
     def test_connection(self):
         if self.backend == "mock":
             return {"backend": "mock", "completed": True, "live_inference": False,

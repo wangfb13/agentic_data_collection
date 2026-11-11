@@ -8,6 +8,13 @@ COMMAND="${1:-doctor}"
 case "$COMMAND" in
   agentic) SCRIPT_ARGS=(agentic.py) ;;
   rsi) SCRIPT_ARGS=(rsi.py) ;;
+  skill-loop) SCRIPT_ARGS=(skill_loop.py) ;;
+  primary-skill-export) SCRIPT_ARGS=(primary_skill_export.py) ;;
+  skill-label-review) SCRIPT_ARGS=(skill_label_review.py) ;;
+  skill-offline) SCRIPT_ARGS=(skill_offline.py) ;;
+  skill-collect) SCRIPT_ARGS=(skill_collect.py) ;;
+  skill-extension) SCRIPT_ARGS=(skill_extension.py) ;;
+  skill-feedback) SCRIPT_ARGS=(skill_feedback.py) ;;
   e1e2) SCRIPT_ARGS=(e1e2.py) ;;
   analyze_e1e2|analyze-e1e2) SCRIPT_ARGS=(analyze_e1e2.py) ;;
   setup) SCRIPT_ARGS=(wizard.py setup) ;;
@@ -25,9 +32,35 @@ case "$COMMAND" in
   record-stress) SCRIPT_ARGS=(record_stress.py) ;;
   register-report) SCRIPT_ARGS=(register_validation.py) ;;
   python) SCRIPT_ARGS=() ;;
-  *) echo 'Usage: bash run_on_5090.sh agentic|rsi|e1e2|analyze_e1e2|setup|run|doctor|record-pose|move-tcp|prepare|stop-test|validate-force|opening-repeat|contact|visual|analyze|record-stress|register-report|python [arguments]' >&2; exit 2 ;;
+  *) echo 'Usage: bash run_on_5090.sh agentic|rsi|skill-loop|primary-skill-export|skill-label-review|skill-offline|skill-collect|skill-extension|skill-feedback|e1e2|analyze_e1e2|setup|run|doctor|record-pose|move-tcp|prepare|stop-test|validate-force|opening-repeat|contact|visual|analyze|record-stress|register-report|python [arguments]' >&2; exit 2 ;;
 esac
 if (( $# )); then shift; fi
+
+# Review and export use a local standard-library entry point.
+if [[ "$COMMAND" == "primary-skill-export" || "$COMMAND" == "skill-label-review" ]]; then
+  cd "$ROOT_DIR"
+  a_axis_python="$ROOT_DIR/.venv/bin/python"
+  if [[ -e /.dockerenv || -e /run/.containerenv ]]; then a_axis_python="$ROOT_DIR/.venv_robot/bin/python"; fi
+  if [[ ! -x "$a_axis_python" ]]; then a_axis_python=python3; fi
+  exec "$a_axis_python" "${SCRIPT_ARGS[@]}" "$@"
+fi
+
+# Offline skill-loop planning runs without Docker or ROS.
+if [[ "$COMMAND" == "skill-loop" ]]; then
+  vision_real=0
+  vision_help=0
+  for vision_arg in "$@"; do
+    if [[ "$vision_arg" == "--real" ]]; then vision_real=1; fi
+    if [[ "$vision_arg" == "--help" || "$vision_arg" == "-h" ]]; then vision_help=1; fi
+  done
+  if [[ "$vision_real" == 0 || "$vision_help" == 1 ]]; then
+    cd "$ROOT_DIR"
+    vision_python="$ROOT_DIR/.venv/bin/python"
+    if [[ -e /.dockerenv || -e /run/.containerenv ]]; then vision_python="$ROOT_DIR/.venv_robot/bin/python"; fi
+    if [[ ! -x "$vision_python" ]]; then echo "Missing offline Python: $vision_python" >&2; exit 2; fi
+    exec "$vision_python" "${SCRIPT_ARGS[@]}" "$@"
+  fi
+fi
 
 if [[ -e /.dockerenv || -e /run/.containerenv ]]; then
   cd "$ROOT_DIR"
@@ -41,7 +74,7 @@ if [[ -e /.dockerenv || -e /run/.containerenv ]]; then
   if [[ "$COMMAND" == "analyze_e1e2" || "$COMMAND" == "analyze-e1e2" ]]; then
     exec "$python_bin" "${SCRIPT_ARGS[@]}" "$@"
   fi
-  if [[ "$COMMAND" == "agentic" || "$COMMAND" == "rsi" ]]; then
+  if [[ "$COMMAND" == "agentic" || "$COMMAND" == "rsi" || "$COMMAND" == "skill-collect" || "$COMMAND" == "skill-extension" || "$COMMAND" == "skill-offline" || "$COMMAND" == "skill-feedback" || "$COMMAND" == "skill-loop" ]]; then
     agentic_real=0
     for agentic_arg in "$@"; do
       if [[ "$agentic_arg" == "--real" ]]; then agentic_real=1; fi

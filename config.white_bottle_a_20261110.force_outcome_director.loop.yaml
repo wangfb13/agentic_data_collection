@@ -1,0 +1,412 @@
+schema: a_skill_loop_v1
+skill_config: config.white_bottle_a_20261110.set.skill.yaml
+reference_session: outputs/white_a_current_x5_20261110_fast
+exploration_config: config.skill.a_loop.exploration.yaml
+action_axis: a
+physical_setup_confirmed: false
+target_definition:
+  id: white_bottle_a_acceptable_contact_set_20261110_v2
+  description: 白瓶接触位置恢复的目标是一组可以交给现有力控模块继续抓取的接触状态；T0仅作坐标和漂移监测参考，不要求每次回到T0。同一状态的调用与退出标签必须一致。
+  normal: 当前两指均有稳定、非边缘的有效瓶身接触；按本任务标准，无需沿a调整位置即可交给力控模块。允许前后不同的位置；仅碰到胶面不足以证明合格。不确定选未知。
+  needs_recovery: 已建立可观测的双侧接触，但位置不符合交给力控模块的要求，且需沿a修正。根据接触观测判断，不能根据偏移命令或与T0不同来贴标签。
+  completion: 当前窗口达到同一组可交给力控模块的接触要求，双侧稳定且不靠边。允许多个合格区域；未达到选否，无法判断选未知。此标签不是提起/整任务成功标签。
+learning:
+  contact_policy:
+    include_successful_B: false
+    dd_pool: false
+  state_learning:
+    min_train_per_class: 4
+    min_calibration_per_class: 2
+    min_validation_per_class: 2
+  target_definition_id: white_bottle_a_acceptable_contact_set_20261110_v2
+  target_mode: acceptable_set
+planner:
+  mode: llm
+  provider:
+    backend: chatgpt
+    model: null
+    callback_port: 8766
+    login_timeout_s: 600
+    open_browser: false
+    request_timeout_s: 120
+    proxy: http://127.0.0.1:18082
+  authority: director
+budget:
+  max_rounds: 5
+  max_new_attempts: 158
+  max_batch_attempts: 48
+  max_agent_decisions: 64
+initial_A:
+  offsets_mm:
+  - -5
+  - -2.5
+  - 0
+  - 2.5
+  - 5
+  reps: 4
+  seed: 20261120
+development_B:
+  offsets_mm:
+  - -5
+  - 0
+  - 5
+  reps: 4
+  seed: 20261114
+independent_B:
+  offsets_mm:
+  - -5
+  - 0
+  - 5
+  reps: 8
+  seed: 20261115
+acceptance:
+  expected_role: development
+  min_trials: 12
+  min_normal: 3
+  min_needs: 3
+  min_target: 3
+  min_not_target: 3
+  min_verified_recoveries: 3
+  min_invocation_recall: 0.8
+  min_normal_specificity: 0.9
+  min_recovery_success_rate: 0.8
+  min_exit_recall: 0.8
+  max_rejection_rate: 0.2
+  max_false_success: 0
+  require_task_success: false
+  min_task_success_rate: 0.8
+seed: 20261110
+operator_feedback:
+  schema: operator_outcome_feedback_v1
+  source_session: /home/dm/DM_das/bottle_grasp_experiment/outputs/white_a_current_x5_20261110_fast
+  operator_request: 我看了都没问题，你就把不达力的当作需要恢复，其他都当没问题，然后进入下一个agent 操作吧
+  label_source: user_requested_force_outcome_rule
+  rule:
+    force_not_reached: needs_recovery
+    hold_complete: already_normal
+  use: weak_supervision_hypothesis_for_director
+  position_ground_truth_confirmed: false
+  source_labels_modified: false
+  interpretation: 用户复核图像后指定按夹紧结果分组。该规则反映当前夹紧协议的结果；尚未证明未达力由a轴位置引起，不得伪装成已确认的位置真值或恢复后的退出证据。
+  protocol:
+    closure_floor: 0.336
+    force_target_sdk: 5.0
+    squeeze_tolerance_sdk: 0.5
+    stable_duration_s: 0.5
+    timeout_s: 30.0
+  counts:
+    already_normal: 11
+    needs_recovery: 11
+  operator_visual_review_status: 用户已复核触觉原图，不再等待同一轮图像复核；用户要求按未达力/成功作11/11分组，未新增位置纠正后的实测窗口。
+  review_artifact: /home/dm/DM_das/bottle_grasp_experiment/outputs/white_a_20261110_force_outcome_review/operator_feedback.json
+  review_artifact_sha256: ade66799dcfadaeb76d9c4869ad3a50942845026308696c35c9e052a6336b16c
+  source_snapshot_sha256: dfb52d55cbec1c9d3815f013f8bc86407c3acbaf72ac0f0f4c869b465e380e51
+  trials:
+  - id: '00001'
+    bottle: light
+    offset_mm: 0.0
+    observed_status: hold_complete
+    requested_class: already_normal
+    first_contact_timestamp_ns: 1882554762700201
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 6.308404625
+      min_width: 0.341
+      last_width: 0.341
+      last_2s_mean_force_median_sdk: 4.4771688210467495
+      width_floor_fraction_within_1_count: 0.0
+  - id: '00002'
+    bottle: light
+    offset_mm: -5.0
+    observed_status: force_not_reached
+    requested_class: needs_recovery
+    first_contact_timestamp_ns: 1882794564377688
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 30.062757897
+      min_width: 0.336
+      last_width: 0.336
+      last_2s_mean_force_median_sdk: 3.9507753297686574
+      width_floor_fraction_within_1_count: 0.8556220891550232
+  - id: '00003'
+    bottle: light
+    offset_mm: 2.5
+    observed_status: hold_complete
+    requested_class: already_normal
+    first_contact_timestamp_ns: 1882941738520630
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 5.333332644
+      min_width: 0.344
+      last_width: 0.344
+      last_2s_mean_force_median_sdk: 4.204050485789776
+      width_floor_fraction_within_1_count: 0.0
+  - id: '00004'
+    bottle: light
+    offset_mm: 2.5
+    observed_status: hold_complete
+    requested_class: already_normal
+    first_contact_timestamp_ns: 1883096609574931
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 6.242787924
+      min_width: 0.341
+      last_width: 0.341
+      last_2s_mean_force_median_sdk: 4.512525860965251
+      width_floor_fraction_within_1_count: 0.0
+  - id: '00005'
+    bottle: light
+    offset_mm: -5.0
+    observed_status: force_not_reached
+    requested_class: needs_recovery
+    first_contact_timestamp_ns: 1883224363424210
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 30.058737623
+      min_width: 0.336
+      last_width: 0.336
+      last_2s_mean_force_median_sdk: 3.6789402410387995
+      width_floor_fraction_within_1_count: 0.854956753160346
+  - id: '00006'
+    bottle: light
+    offset_mm: 5.0
+    observed_status: hold_complete
+    requested_class: already_normal
+    first_contact_timestamp_ns: 1883371914317237
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 5.595171972
+      min_width: 0.347
+      last_width: 0.347
+      last_2s_mean_force_median_sdk: 4.475536768138408
+      width_floor_fraction_within_1_count: 0.0
+  - id: '00007'
+    bottle: light
+    offset_mm: 5.0
+    observed_status: hold_complete
+    requested_class: already_normal
+    first_contact_timestamp_ns: 1883479392065601
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 5.598102632
+      min_width: 0.347
+      last_width: 0.347
+      last_2s_mean_force_median_sdk: 4.431655828654765
+      width_floor_fraction_within_1_count: 0.0
+  - id: 00008
+    bottle: light
+    offset_mm: 0.0
+    observed_status: force_not_reached
+    requested_class: needs_recovery
+    first_contact_timestamp_ns: 1883808092303724
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 30.058777744
+      min_width: 0.336
+      last_width: 0.336
+      last_2s_mean_force_median_sdk: 4.314178292453288
+      width_floor_fraction_within_1_count: 0.8290086493679308
+  - id: 00009
+    bottle: light
+    offset_mm: -2.5
+    observed_status: force_not_reached
+    requested_class: needs_recovery
+    first_contact_timestamp_ns: 1884084738593664
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 30.074018776
+      min_width: 0.336
+      last_width: 0.336
+      last_2s_mean_force_median_sdk: 4.2562206966181595
+      width_floor_fraction_within_1_count: 0.8410904255319149
+  - id: '00010'
+    bottle: light
+    offset_mm: -2.5
+    observed_status: force_not_reached
+    requested_class: needs_recovery
+    first_contact_timestamp_ns: 1884218741567872
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 30.069191173
+      min_width: 0.336
+      last_width: 0.336
+      last_2s_mean_force_median_sdk: 4.327210901429256
+      width_floor_fraction_within_1_count: 0.8449767132401863
+  - id: '00011'
+    bottle: light
+    offset_mm: 0.0
+    observed_status: force_not_reached
+    requested_class: needs_recovery
+    first_contact_timestamp_ns: 1884347371760050
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 30.07597037
+      min_width: 0.336
+      last_width: 0.336
+      last_2s_mean_force_median_sdk: 4.297876952340205
+      width_floor_fraction_within_1_count: 0.8377659574468085
+  - id: '00012'
+    bottle: heavy
+    offset_mm: 0.0
+    observed_status: force_not_reached
+    requested_class: needs_recovery
+    first_contact_timestamp_ns: 1884491449329092
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 30.063308
+      min_width: 0.336
+      last_width: 0.336
+      last_2s_mean_force_median_sdk: 4.393337724854549
+      width_floor_fraction_within_1_count: 0.8409846972721224
+  - id: '00013'
+    bottle: heavy
+    offset_mm: -5.0
+    observed_status: force_not_reached
+    requested_class: needs_recovery
+    first_contact_timestamp_ns: 1884622032313503
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 30.07341481
+      min_width: 0.336
+      last_width: 0.336
+      last_2s_mean_force_median_sdk: 3.8919126970072586
+      width_floor_fraction_within_1_count: 0.8503989361702128
+  - id: '00014'
+    bottle: heavy
+    offset_mm: 5.0
+    observed_status: hold_complete
+    requested_class: already_normal
+    first_contact_timestamp_ns: 1884724572214040
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 5.968756561
+      min_width: 0.348
+      last_width: 0.348
+      last_2s_mean_force_median_sdk: 4.469605920960506
+      width_floor_fraction_within_1_count: 0.0
+  - id: '00015'
+    bottle: heavy
+    offset_mm: -5.0
+    observed_status: force_not_reached
+    requested_class: needs_recovery
+    first_contact_timestamp_ns: 1884875503869799
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 30.062660961
+      min_width: 0.336
+      last_width: 0.336
+      last_2s_mean_force_median_sdk: 3.73523247068127
+      width_floor_fraction_within_1_count: 0.8769128409846972
+  - id: '00016'
+    bottle: heavy
+    offset_mm: -2.5
+    observed_status: hold_complete
+    requested_class: already_normal
+    first_contact_timestamp_ns: 1885332831267195
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 6.822627647
+      min_width: 0.336
+      last_width: 0.336
+      last_2s_mean_force_median_sdk: 4.574851192037265
+      width_floor_fraction_within_1_count: 0.23976608187134502
+  - id: '00017'
+    bottle: heavy
+    offset_mm: -2.5
+    observed_status: force_not_reached
+    requested_class: needs_recovery
+    first_contact_timestamp_ns: 1885430231950527
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 30.063383368
+      min_width: 0.336
+      last_width: 0.336
+      last_2s_mean_force_median_sdk: 4.321488894025485
+      width_floor_fraction_within_1_count: 0.8477393617021277
+  - id: 00018
+    bottle: heavy
+    offset_mm: 5.0
+    observed_status: hold_complete
+    requested_class: already_normal
+    first_contact_timestamp_ns: 1885555953985263
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 6.100859448
+      min_width: 0.349
+      last_width: 0.349
+      last_2s_mean_force_median_sdk: 4.590946591893832
+      width_floor_fraction_within_1_count: 0.0
+  - id: 00019
+    bottle: heavy
+    offset_mm: 2.5
+    observed_status: hold_complete
+    requested_class: already_normal
+    first_contact_timestamp_ns: 1885662187230627
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 5.634551232
+      min_width: 0.345
+      last_width: 0.345
+      last_2s_mean_force_median_sdk: 4.485933340589206
+      width_floor_fraction_within_1_count: 0.0
+  - id: '00020'
+    bottle: heavy
+    offset_mm: 2.5
+    observed_status: hold_complete
+    requested_class: already_normal
+    first_contact_timestamp_ns: 1885802968315562
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 5.766866263
+      min_width: 0.341
+      last_width: 0.341
+      last_2s_mean_force_median_sdk: 4.397037304441135
+      width_floor_fraction_within_1_count: 0.0
+  - id: '00021'
+    bottle: heavy
+    offset_mm: 0.0
+    observed_status: force_not_reached
+    requested_class: needs_recovery
+    first_contact_timestamp_ns: 1885937989625603
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 30.069906673
+      min_width: 0.336
+      last_width: 0.336
+      last_2s_mean_force_median_sdk: 4.314269698659579
+      width_floor_fraction_within_1_count: 0.8522954091816367
+  - id: '00022'
+    bottle: heavy
+    offset_mm: 0.0
+    observed_status: hold_complete
+    requested_class: already_normal
+    first_contact_timestamp_ns: 1886128813482091
+    recorded_contact_windows: 1
+    squeeze:
+      duration_s: 6.353037549
+      min_width: 0.336
+      last_width: 0.336
+      last_2s_mean_force_median_sdk: 4.52466084510088
+      width_floor_fraction_within_1_count: 0.18553459119496854
+  diagnostic_summary:
+    all_11_failures_reached_closure_floor: true
+    failure_end_force_median_range_sdk:
+    - 3.6789402410387995
+    - 4.393337724854549
+    outcomes_by_offset_mm:
+      '0.0':
+        hold_complete: 2
+        force_not_reached: 4
+      '-5.0':
+        hold_complete: 0
+        force_not_reached: 4
+      '2.5':
+        hold_complete: 4
+        force_not_reached: 0
+      '5.0':
+        hold_complete: 4
+        force_not_reached: 0
+      '-2.5':
+        hold_complete: 1
+        force_not_reached: 3
+    causal_limit: 当前观察显示结果与位置相关，同时受0.336闭合下限约束；不能分离位置因果与夹紧协议，未做同一状态a轴恢复前后对照。

@@ -1,0 +1,63 @@
+schema: bottle_skill_exploration_v1
+task_id: bottle_contact_recovery
+variables:
+  a_mm:
+    meaning: Translation along original T0 local finger axis a
+    unit: mm
+    executor: trial.delta_mm
+    range:
+    - -10.0
+    - 10.0
+    levels:
+    - -10.0
+    - -5.0
+    - 0.0
+    - 5.0
+    - 10.0
+    reference: 0.0
+    runtime_source: tactile recovery estimate; planned value is analysis-only
+  contact_height_l_mm:
+    meaning: Contact displacement along original T0 local l, perpendicular to a; not
+      necessarily world z
+    unit: mm
+    executor: trial.perturbation.l_mm
+    range:
+    - -4.0
+    - 4.0
+    levels:
+    - -4.0
+    - 0.0
+    - 4.0
+    reference: 0.0
+    runtime_source: measured TCP projected on calibrated local l
+  probe_force:
+    meaning: Per-finger probe target in existing force interface units
+    unit: sdk
+    executor: config.force.probe_fraction = probe_force / config.force.target
+    range:
+    - 0.0
+    - 100.0
+    levels:
+    - 1.0
+    - 1.5
+    - 2.0
+    reference: 1.5
+    runtime_source: measured per-finger normal force and commanded probe target
+a_reference_mm: 0.0
+reps_per_condition: 2
+max_round_trials: 12
+max_combinations: 4
+history_enabled: true
+history_limit: 5
+minimum_development_trials: 4
+reference_every: 4
+learner: existing_contact_policy
+action_space:
+  a_mm:
+  - -3.0
+  - 3.0
+  contact_height_l_mm:
+  - -4.0
+  - 4.0
+  regrasp: open_retract_translate_recontact
+extension_status: awaits_real_data_and_applicability_checks

@@ -1,0 +1,28 @@
+schema: bottle_skill_extension_config_v1
+base_config: config.e1e2.yaml
+exploration:
+  task_id: bottle_contact_recovery
+  reps_per_condition: 2
+  max_round_trials: 12
+  max_combinations: 4
+  history_enabled: true
+  history_limit: 5
+  minimum_development_trials: 4
+  reference_every: 4
+variables:
+  a_mm:
+    range: [-4.0, 4.0]
+    levels: [-4.0, 0.0, 4.0]
+    reference: 0.0
+  contact_height_l_mm:
+    # Local l must be checked against actual world vertical before interpreting
+    # it as bottle height. No rotation or simultaneous squeeze is introduced.
+    range: [-4.0, 4.0]
+    levels: [-4.0, 0.0, 4.0]
+    reference: 0.0
+  probe_force:
+    # SDK units, not calibrated Newtons. null reference derives from existing
+    # force.target * probe_fraction. Existing force.max remains unchanged.
+    range: [1.0, 2.0]
+    levels: [1.0, 1.5, 2.0]
+    reference: null

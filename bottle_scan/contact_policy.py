@@ -119,8 +119,14 @@ def _settings(settings):
 
 
 def _B_observations(rows, reference, settings, cfg):
-    """Only measured, applied, eventually successful recovery transitions."""
+    """Learn measured contact restoration; downstream force success is separate.
+
+    Legacy data still require the historical whole-task success criterion. Joint
+    evidence instead needs explicit independent position-target and handoff
+    proof below, even when subsequent squeezing did not reach its force target.
+    """
     observations, excluded = [], Counter()
+    target_id = settings.get('target_definition_id')
     for row in rows:
         if row.get('cond') != 'B':
             continue
@@ -128,15 +134,37 @@ def _B_observations(rows, reference, settings, cfg):
             excluded['B_final_validation_never_trains'] += 1
             continue
         if (not row.get('complete') or not row.get('recording_verified') or
-                row.get('archived_attempt') or not _success(row) or
+                row.get('archived_attempt') or
+                (target_id is None and not _success(row)) or
+                (target_id is not None and row.get('label') in ('tipped','tilted','pushed','invalid')) or
                 row.get('servo_exhausted') or row.get('kind') != 'scan'):
             excluded['B_not_reliable_success'] += 1
             continue
+        if target_id is not None:
+            gt = row.get('skill_ground_truth') or {}
+            handoff = row.get('skill_handoff') or (row.get('skill_outputs') or {}).get('exit') or {}
+            declared = row.get('session_meta', {}).get('config', {}).get('recovery_skill', {}).get('target_definition', {}).get('id')
+            if (not isinstance(target_id, str) or not target_id or
+                    row.get('session_role') != 'development' or declared != target_id or
+                    gt.get('source') != 'operator_review_of_observed_contact' or
+                    gt.get('independent_of_experimental_offset') is not True or
+                    gt.get('target_definition_id') != target_id or
+                    gt.get('initial_class') != 'needs_recovery' or
+                    gt.get('final_target_reached') is not True or
+                    handoff.get('hand_back') is not True or handoff.get('completed') is not True or
+                    not _joint_B_terminal_label(row, target_id)):
+                excluded['B_joint_target_or_handoff_unverified'] += 1
+                continue
         history = row.get('correction_history', [])
         regrasps = row.get('probe_regrasps', [])
         if not history or not history[-1].get('accepted') or not regrasps:
             excluded['B_no_verified_recovery'] += 1
             continue
+        if target_id is not None:
+            history = [step for step in history if step.get('terminal') is not True]
+            if len(history) != len(regrasps):
+                excluded['B_joint_action_probe_count_mismatch'] += 1
+                continue
         probes = [row.get('probe_initial', {})] + [r.get('probe') or {} for r in regrasps]
         for index, following in enumerate(probes[1:]):
             before = probes[index]
@@ -144,6 +172,11 @@ def _B_observations(rows, reference, settings, cfg):
             if not before.get('valid') or not following.get('valid') or step.get('blocked'):
                 excluded['B_invalid_transition'] += 1
                 continue
+            if target_id is not None:
+                before = _joint_B_action_observation(row, step, regrasps[index], before, following, target_id, cfg)
+                if before is None:
+                    excluded['B_joint_receipt_or_fresh_observation_unverified'] += 1
+                    continue
             measured = [_measured_probe({**row, 'probe_initial': p}, reference, settings) for p in (before, following)]
             action = step.get('applied_delta_mm')
             if (any(m.get('x_mm') is None or not m['source'].startswith('measured_tcp') for m in measured) or
@@ -155,11 +188,82 @@ def _B_observations(rows, reference, settings, cfg):
                 'id': row['id'], 'session': row['session'], 'trial_path': row['trial_path'],
                 'metadata_sha256': row['metadata_sha256'], 'descriptors': before['descriptors'],
                 'x_mm': measured[0]['x_mm'], 'target_action_mm': float(action),
-                'measurement': measured[0], 'group': row['trial_path'],
+                'measurement': measured[0], 'group': row.get('canonical_trial_path',row['trial_path']),
+                'canonical_session': row.get('canonical_session',row['session']),
                 'label_source': 'B_verified_successful_executed_action_not_optimal',
                 'transition_index': index,
             })
     return observations, dict(excluded)
+
+
+def _joint_B_terminal_label(row, target_id):
+    """A global success answer cannot override an unknown/failed final window."""
+    events = [event for event in row.get('skill_observations', [])
+              if isinstance(event, dict) and isinstance(event.get('observation'), dict) and
+              type(event['observation'].get('timestamp_ns')) is int]
+    if not events:
+        return False
+    latest = max(event['observation']['timestamp_ns'] for event in events)
+    terminal = [event for event in events if event['observation']['timestamp_ns'] == latest and
+                (event.get('skill_outputs') or {}).get('exit', {}).get('hand_back') is True and
+                (event.get('skill_outputs') or {}).get('exit', {}).get('completed') is True and
+                (event['observation'].get('context') or {}).get('target_definition_id') == target_id]
+    if not terminal:
+        return False
+    labels = row.get('skill_window_labels') or []
+    # A label for an unrecorded later window is not terminal evidence either.
+    if any(isinstance(label, dict) and type(label.get('timestamp_ns')) is int and
+           label['timestamp_ns'] > latest for label in labels):
+        return False
+    matched = [label for label in labels if isinstance(label, dict) and label.get('timestamp_ns') == latest]
+    return bool(matched) and all(label.get('target_reached') is True and
+        label.get('target_definition_id') == target_id and
+        label.get('source') == 'operator_review_of_observed_contact' and
+        label.get('independent_of_experimental_offset') is True for label in matched)
+
+
+def _joint_B_action_observation(row, step, regrasp, before, following, target_id, cfg):
+    """Bind an executed a action to its actual decision window and fresh probe.
+
+    The legacy action learner accepts historic geometric transition records.
+    Joint learning requires the same stronger receipts as the live skill, plus
+    explicit observed-contact provenance; a successful lift alone is insufficient.
+    """
+    receipt = regrasp.get('receipt') or {}
+    decision = step.get('skill_decision') or {}
+    request = (decision.get('recovery') or {}).get('action') or {}
+    command, action, executed = step.get('delta_mm'), step.get('applied_delta_mm'), receipt.get('action_mm')
+    numbers = (command, action, executed, request.get('delta_mm'))
+    if (receipt.get('applied') is not True or request.get('axis') != 'a' or
+            any(type(v) not in (float, int) or not np.isfinite(v) for v in numbers) or
+            abs(action) < 1e-6 or abs(command) < 1e-6 or
+            abs(action) > cfg['max_action_mm'] or abs(command) > cfg['max_action_mm'] or
+            abs(executed-action) > 1e-6 or abs(request['delta_mm']-command) > 1e-6 or
+            abs(command-action) > cfg['B_tracking_tolerance_mm']):
+        return None
+    completed, after_ns, command_ns = receipt.get('completed_ns'), following.get('timestamp_ns'), step.get('timestamp_ns')
+    before_ns = before.get('timestamp_ns')
+    if (any(type(v) is not int for v in (before_ns, completed, after_ns, command_ns)) or
+            not 0 <= before_ns <= command_ns <= completed < after_ns):
+        return None
+    candidates = []
+    for event in row.get('skill_observations') or []:
+        observation = event.get('observation') or {}
+        ts = observation.get('timestamp_ns')
+        if (event.get('skill_outputs') == decision and type(ts) is int and
+                before_ns <= ts <= command_ns and
+                (observation.get('context') or {}).get('target_definition_id') == target_id):
+            candidates.append(observation)
+    if not candidates:
+        return None
+    actual = max(candidates, key=lambda observation: observation['timestamp_ns'])
+    # Confirmations can precede a move. Use the descriptors actually used for
+    # that decision, not stale descriptors from the first touch of the trial.
+    probe = deepcopy(before)
+    if actual['timestamp_ns'] != before_ns:
+        probe.pop('window', None)
+    probe.update(timestamp_ns=actual['timestamp_ns'], descriptors=deepcopy(actual.get('descriptors')))
+    return probe
 
 
 def _split(obs, cfg):
@@ -175,7 +279,7 @@ def _split(obs, cfg):
         return train, test, {'method': 'frozen_trial_groups', 'seed': cfg['seed'],
                             'split_selection': 'preregistered group identities; all new groups train, no feature/label access',
                             'validation_groups': sorted(held), 'training_groups': sorted(set(keys) - held)}
-    sessions = sorted({o['session'] for o in obs})
+    sessions = sorted({o.get('canonical_session',o['session']) for o in obs})
     method = 'held_out_session' if len(sessions) > 1 else 'held_out_trial_group'
     groups = sessions if len(sessions) > 1 else sorted({o['group'] for o in obs})
     if len(groups) < 2:
@@ -184,7 +288,7 @@ def _split(obs, cfg):
     order = [groups[i] for i in rng.permutation(len(groups))]
     count = max(1, min(len(groups) - 1, int(np.ceil(len(groups) * cfg['validation_fraction']))))
     held = set(order[:count])
-    keys = [o['session'] if method == 'held_out_session' else o['group'] for o in obs]
+    keys = [o.get('canonical_session',o['session']) if method == 'held_out_session' else o['group'] for o in obs]
     counts = Counter(keys)
     # Incremental collection creates small sessions beside a large seed
     # session. Choose a size-feasible whole-group split using counts only,

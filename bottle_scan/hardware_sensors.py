@@ -24,7 +24,7 @@ class SensorFault(RuntimeError):
 
 
 def inspect_wrench_pub(address="tcp://192.168.9.11:39020", *,
-                       serials=("X2620410318", "X2620410347"), duration_s=5.0,
+                       serials=("X26040505", "X26040305"), duration_s=5.0,
                        _context_factory=None, _clock=time.monotonic_ns):
     """Read-only, bounded diagnostic subscription to the existing wrench PUB.
 
@@ -504,7 +504,7 @@ def decode_existing_gel_raw(parts):
 
 
 def inspect_dd_pub(address="tcp://192.168.9.11:39030", *,
-                   serials=("X2620410318","X2620410347"),duration_s=5.,
+                   serials=("X26040505","X26040305"),duration_s=5.,
                    _context_factory=None,_clock=time.monotonic_ns):
     """At most five seconds of SUB diagnostics; never turns raw images into DD."""
     if not isinstance(address,str) or not address.startswith("tcp://") or not np.isfinite(duration_s) or not 0<duration_s<=5:

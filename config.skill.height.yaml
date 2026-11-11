@@ -1,0 +1,35 @@
+# Evaluation/certificate specification for measured-l recovery.
+# Must match ExtensionRecoveryRunner. No deployment certificate is supplied.
+schema: bottle_skill_config_v1
+base_config: config.e1e2.yaml
+context:
+  task: bottle
+  contact_protocol: fixed_a_height_l
+runtime:
+  action_axis: l
+  max_total_action_mm: 8.0
+  required_context:
+    task: bottle
+    contact_protocol: fixed_a_height_l
+    probe_target_sdk: 1.5
+collection:
+  # Actual height positions and fixed controls come from the immutable
+  # skill_extension.py plan --stage height_controlled design.
+  offsets_mm: [-4, 0, 4]
+  reps: 8
+  seed: 20261105
+variables:
+  contact_height_l:
+    meaning: measured displacement along original local l; independent of a
+    unit: mm
+    execution: RecoveryProbeBounds.l
+    runtime_input: false
+  probe_force:
+    meaning: per-finger normal probe target in SDK units, not calibrated Newtons
+    unit: sdk
+    execution: force.target * force.probe_fraction
+    runtime_input: true
+memory:
+  enabled: true
+  source_task_cost_separate: true
+  path: outputs/rsi_method_memory
