@@ -26,7 +26,7 @@ def main(argv=None):
     parser.add_argument("--no-cameras", action="store_true", help="Skip the existing PUSH/PULL wrist streams")
     parser.add_argument("--wrench-address", default="tcp://192.168.9.11:39020")
     parser.add_argument("--dd-address", default="tcp://192.168.9.11:39030")
-    parser.add_argument("--serials", nargs=2, default=["X2620410318", "X2620410347"])
+    parser.add_argument("--serials", nargs=2, default=["X26040505", "X26040305"])
     args = parser.parse_args(argv)
     report = {"read_only":True, "created_unix_ns":time.time_ns(), "arm":args.arm,
         "checks":{}, "errors":[], "notice":"This is connectivity evidence, not physical calibration or motion commissioning."}

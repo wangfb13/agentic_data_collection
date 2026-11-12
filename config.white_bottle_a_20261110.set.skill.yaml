@@ -1,0 +1,71 @@
+# New version: offline until explicitly confirmed; original data and target labels are unchanged.
+schema: bottle_skill_config_v1
+base_config: config.white_bottle_a_20261110.fast.e1e2.yaml
+context:
+  task: bottle
+  contact_protocol: fixed_orientation_a
+runtime:
+  required_context:
+    task: bottle
+    contact_protocol: fixed_orientation_a
+    probe_target_sdk: 1.5
+  target:
+    meaning: fresh stable bilateral interior contact in a learned supported acceptable
+      state set before force control
+    min_stable_duration_s: 0.2
+    confirmation_windows: 2
+  max_regrasps: 3
+  max_total_action_mm: 25.0
+  max_observation_age_s: 2.0
+  tracking_tolerance_mm: 2.0
+  action_axis: a
+  action_unit: mm
+  execution_interface: open_retreat_translate_reapproach_probe
+collection:
+  offsets_mm:
+  - -5
+  - -2.5
+  - 0
+  - 2.5
+  - 5
+  reps: 4
+  seed: 20261120
+variables:
+  a:
+    meaning: insertion direction in original T0 local frame
+    unit: mm
+    execution: MotionBounds.a
+    runtime_input: false
+  contact_height_l:
+    meaning: orthogonal local l contact position; world height requires measured T0
+    unit: mm
+    execution: ProbeBounds.target/perturbation.l_mm
+    runtime_input: false
+  probe_force:
+    meaning: mean normal force in SDK units; not calibrated newtons
+    unit: sdk
+    execution: force.target * force.probe_fraction
+    runtime_input: true
+memory:
+  enabled: true
+  source_task_cost_separate: true
+  path: outputs/rsi_method_memory
+certification:
+  observation_cells: []
+target_definition:
+  id: white_bottle_a_acceptable_contact_set_20261110_v2
+  description: 白瓶接触位置恢复的目标是一组可以交给现有力控模块继续抓取的接触状态；T0仅作坐标和漂移监测参考，不要求每次回到T0。同一状态的调用与退出标签必须一致。
+  normal: 当前两指均有稳定、非边缘的有效瓶身接触；按本任务标准，无需沿a调整位置即可交给力控模块。允许前后不同的位置；仅碰到胶面不足以证明合格。不确定选未知。
+  needs_recovery: 已建立可观测的双侧接触，但位置不符合交给力控模块的要求，且需沿a修正。根据接触观测判断，不能根据偏移命令或与T0不同来贴标签。
+  completion: 当前窗口达到同一组可交给力控模块的接触要求，双侧稳定且不靠边。允许多个合格区域；未达到选否，无法判断选未知。此标签不是提起/整任务成功标签。
+learning:
+  contact_policy:
+    include_successful_B: false
+    dd_pool: false
+  state_learning:
+    min_train_per_class: 4
+    min_calibration_per_class: 2
+    min_validation_per_class: 2
+  target_definition_id: white_bottle_a_acceptable_contact_set_20261110_v2
+  target_mode: acceptable_set
+learning_mode: joint

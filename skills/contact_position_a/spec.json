@@ -1,0 +1,330 @@
+{
+  "schema": "skill_spec_v3",
+  "skill_id": "contact_position_a",
+  "task": {
+    "object_category": "white_bottle",
+    "hidden_object_properties": [
+      "mass_class"
+    ],
+    "action_space": {
+      "id": "tcp_translation_a",
+      "dim": 1,
+      "names": [
+        "delta_a_mm"
+      ],
+      "max_step": [
+        15.0
+      ],
+      "frame": "tcp",
+      "candidate_levels": [
+        [
+          -10,
+          -5,
+          -2.5,
+          0,
+          2.5,
+          5,
+          10
+        ]
+      ]
+    }
+  },
+  "adapters": {
+    "trials": "skills.contact_position_a.observe:iter_trials",
+    "action": "skills.contact_position_a.action:executed_action",
+    "executor": "skills.contact_position_a.executor:translate_plan"
+  },
+  "observation": {
+    "window": {
+      "extractor": "skills.contact_position_a.observe:probe_window",
+      "requires": [
+        "bilateral_contact"
+      ]
+    },
+    "modalities": {
+      "tac": {
+        "extractor": "bottle_scan.state_graph.modalities.contact_geometry:contact_geometry",
+        "version": "two_contact_centroid_area_px_v1",
+        "encoder_features": false
+      },
+      "force": {
+        "extractor": "skills.contact_position_a.observe:wrench_zeroed",
+        "version": "x5_zeroed_wrench_v1"
+      },
+      "vis": {
+        "extractor": "skills.contact_position_a.observe:wrist_dinov2",
+        "version": "dinov2_vits14_3a697b872089933d3",
+        "weight": 0.5
+      }
+    },
+    "record_only": [
+      "gripper_opening",
+      "closure_floor",
+      "protocol_id",
+      "time_period",
+      "sensor_version",
+      "unloaded_reference_id",
+      "approach_pose",
+      "mass_class"
+    ]
+  },
+  "post_conditions": [
+    {
+      "id": "handoff_forcepolicy_floor0330",
+      "description": "现有 ForcePolicy 达到目标力并完成提起保持",
+      "evaluator": "skills.contact_position_a.post:forcepolicy_l2",
+      "consumer": {
+        "controller": "existing_forcepolicy",
+        "version": null,
+        "version_resolution": "Record actual consumer checkpoint identity when freezing the new campaign.",
+        "params": {
+          "closure_floor": 0.33,
+          "target_force_sdk": null,
+          "target_force_mode": "predicted_by_consumer"
+        }
+      },
+      "p_prior": [
+        1,
+        1
+      ],
+      "p_min": 0.05,
+      "ready_p": 0.8
+    },
+    {
+      "id": "handoff_e1e2_squeeze_floor0336",
+      "description": "历史 E1/E2 SQUEEZE 达力后提起保持",
+      "evaluator": "skills.contact_position_a.post:e1e2_squeeze_l2",
+      "consumer": {
+        "controller": "e1e2_squeeze",
+        "params": {
+          "closure_floor": 0.336
+        }
+      },
+      "p_prior": [
+        1,
+        1
+      ],
+      "p_min": 0.05,
+      "ready_p": 0.8
+    },
+    {
+      "id": "handoff_e1e2_squeeze_floor0330",
+      "description": "历史 E1/E2 SQUEEZE 达力后提起保持",
+      "evaluator": "skills.contact_position_a.post:e1e2_squeeze_l2",
+      "consumer": {
+        "controller": "e1e2_squeeze",
+        "params": {
+          "closure_floor": 0.33
+        }
+      },
+      "p_prior": [
+        1,
+        1
+      ],
+      "p_min": 0.05,
+      "ready_p": 0.8
+    },
+    {
+      "id": "handoff_forcepolicy_floor0336",
+      "description": "同一 ForcePolicy 下的 0.336 成对协议，待新采集",
+      "evaluator": "skills.contact_position_a.post:forcepolicy_l2",
+      "consumer": {
+        "controller": "existing_forcepolicy",
+        "version": null,
+        "version_resolution": "Record actual consumer checkpoint identity when freezing the new campaign.",
+        "params": {
+          "closure_floor": 0.336,
+          "target_force_sdk": null,
+          "target_force_mode": "predicted_by_consumer"
+        }
+      },
+      "p_prior": [
+        1,
+        1
+      ],
+      "p_min": 0.05,
+      "ready_p": 0.8
+    }
+  ],
+  "active_post_condition": "handoff_forcepolicy_floor0330",
+  "perturbation_variables": {
+    "a_offset_mm": {
+      "kind": "continuous",
+      "envelope": [
+        -25,
+        25
+      ],
+      "reference": 0.0,
+      "nominal_step": 2.5,
+      "max_expansion": 5.0,
+      "executor": "trial.delta_mm",
+      "active": true,
+      "unit": "mm"
+    },
+    "l_offset_mm": {
+      "kind": "continuous",
+      "envelope": [
+        -10,
+        10
+      ],
+      "reference": 0.0,
+      "nominal_step": 2.5,
+      "max_expansion": 5.0,
+      "executor": "trial.perturbation.l_mm",
+      "active": false,
+      "unit": "mm"
+    },
+    "approach_pose": {
+      "kind": "categorical",
+      "levels": [
+        "pose_0",
+        "pose_yaw30"
+      ],
+      "reference": "pose_0",
+      "active": false,
+      "executor": "trial.approach_pose"
+    },
+    "closure_floor": {
+      "kind": "protocol",
+      "levels": [
+        0.336,
+        0.33
+      ],
+      "reference": 0.33,
+      "affects": "post_condition",
+      "executor": "trial.closure_floor"
+    },
+    "mass_class": {
+      "kind": "object_property",
+      "levels": [
+        "light",
+        "heavy"
+      ],
+      "observable_at_deploy": false
+    }
+  },
+  "safety_envelope": {
+    "max_action": [
+      15.0
+    ],
+    "force_max_sdk": 15.0,
+    "risk_metrics": {
+      "normal_force_peak": {
+        "kind": "exceeds",
+        "limit": 15.0,
+        "weight": 1.0
+      },
+      "contact_lost": {
+        "kind": "boolean",
+        "weight": 1.0
+      }
+    }
+  },
+  "noise": {
+    "alpha": 0.05,
+    "pca_dim": 32
+  },
+  "graph": {
+    "knn": 10,
+    "step_cost": 1.0,
+    "uncertainty_cost": 1.0
+  },
+  "dynamics": {
+    "inputs": [
+      "tac",
+      "force"
+    ],
+    "targets": {
+      "tac": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "force": [
+        0,
+        1,
+        2,
+        6,
+        7,
+        8
+      ]
+    },
+    "ensemble": 5,
+    "hidden": [
+      32,
+      32
+    ],
+    "max_iter": 200,
+    "min_transitions": 6,
+    "max_uncertainty": 1.0
+  },
+  "models": {
+    "ensemble": 5,
+    "min_value_nodes": 8,
+    "min_policy_transitions": 6,
+    "include_inferred_policy": false,
+    "advantage_eta": 1.0
+  },
+  "runtime": {
+    "max_steps": 3
+  },
+  "planning": {
+    "enabled": false
+  },
+  "acceptance": {
+    "development_B": {
+      "min_trials": 12,
+      "min_normal": 3,
+      "min_needs": 3,
+      "min_target": 3,
+      "min_not_target": 3,
+      "min_verified_recoveries": 3,
+      "min_invocation_recall": 0.8,
+      "min_normal_specificity": 0.9,
+      "min_recovery_success_rate": 0.8,
+      "min_exit_recall": 0.8,
+      "max_rejection_rate": 0.2,
+      "max_false_success": 0,
+      "require_task_success": false,
+      "min_task_success_rate": 0.8
+    },
+    "independent_B": {
+      "min_trials": 12,
+      "min_normal": 3,
+      "min_needs": 3,
+      "min_target": 3,
+      "min_not_target": 3,
+      "min_verified_recoveries": 3,
+      "min_invocation_recall": 0.8,
+      "min_normal_specificity": 0.9,
+      "min_recovery_success_rate": 0.8,
+      "min_exit_recall": 0.8,
+      "max_rejection_rate": 0.2,
+      "max_false_success": 0,
+      "require_task_success": false,
+      "min_task_success_rate": 0.8
+    },
+    "requires_ready_and_need_action_coverage": true,
+    "source": "config.white_bottle_a_20261110.live_0330_director.loop.yaml acceptance"
+  },
+  "budget": {
+    "max_new_trials": 160
+  },
+  "data": {
+    "sources": [
+      "outputs/state_graph/20261112_symbolic_v2/features/nodes_with_features.json"
+    ],
+    "separate_historical_tasks": true,
+    "note": "Historical green and white categories remain distinct graphs. Hidden mass classes do not split tasks.",
+    "visual_model_directory": "outputs/state_graph/20261112_symbolic_v1/features/models/dinov2"
+  },
+  "generalization": {
+    "variable": "approach_pose"
+  },
+  "validation": {
+    "folds": 5
+  }
+}

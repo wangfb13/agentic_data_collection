@@ -1,0 +1,117 @@
+{
+  "schema": "symbolic_state_graph_config_v1",
+  "sources": [
+    "outputs/white_a_current_x5_20261110_fast",
+    "outputs/white_a_director_live_0330_20261110/batches/001/A",
+    "outputs/white_b_current_x5_dev_20261109",
+    "outputs/e1e2_A_formal01",
+    "outputs/e1e2_B_formal01",
+    "outputs/rsi_contact01/batches/*"
+  ],
+  "noise": {
+    "pca_dim": 32,
+    "quantile": 0.95,
+    "w_vis": 0.5
+  },
+  "graph": {
+    "modalities": [
+      "tac",
+      "pos",
+      "force",
+      "open",
+      "vis"
+    ],
+    "knn": 10,
+    "max_action_mm": 15,
+    "kinematic_multiplier": 1.5
+  },
+  "facts": {
+    "nominal_step_mm": {
+      "a": 2.5
+    }
+  },
+  "folds": 5,
+  "spec": {
+    "skill": "a_axis_contact_recovery",
+    "envelope": {
+      "allowed_axes": [
+        "a",
+        "l"
+      ],
+      "range_mm": {
+        "a": [
+          -25,
+          25
+        ],
+        "l": [
+          -10,
+          10
+        ]
+      },
+      "max_action_mm": 15,
+      "finger_force_max_sdk": 15
+    },
+    "fixed_protocol": {
+      "probe_force_sdk": 1.5,
+      "target_force_sdk": 5.0,
+      "training_scope": "stable bilateral PROBE; downstream outcome is label only"
+    },
+    "variable_protocol": {
+      "closure_floor": {
+        "levels": [
+          0.336,
+          0.33
+        ]
+      }
+    },
+    "recordable_attributes": [
+      "closure_floor",
+      "sensor_version",
+      "time_period"
+    ],
+    "budget_left": 30,
+    "collection_config": {
+      "design": {
+        "bottles": [
+          "light",
+          "heavy"
+        ],
+        "zero_every": 8
+      },
+      "force": {
+        "target": 5.0,
+        "probe_fraction": 0.3
+      },
+      "motion": {
+        "max_grasp_offset_mm": 25
+      }
+    }
+  },
+  "rule": {
+    "rule_id": "symbolic_initial",
+    "active_axes": [
+      "a"
+    ],
+    "range_mm": {
+      "a": [
+        -5,
+        5
+      ]
+    },
+    "nominal_step_mm": {
+      "a": 2.5
+    },
+    "objects": [
+      "white_light",
+      "white_heavy"
+    ],
+    "reps_policy": {
+      "per_object": 2
+    },
+    "parent_rule_id": null,
+    "reason": "Initial guide rule; offline only",
+    "evidence_refs": []
+  },
+  "provider_config": "config.white_bottle_a_20261110.live_0330_director.loop.yaml",
+  "provider_container": "daimon_ros1_das"
+}

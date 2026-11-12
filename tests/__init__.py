@@ -1,1 +1,1 @@
-"""Offline regression tests for bottle grasp collection."""
+"""Repository tests and synthetic specification fixtures."""

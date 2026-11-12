@@ -54,9 +54,9 @@ def parser():
     p.add_argument("--quaternion-xyzw", nargs=4, type=float, metavar=("QX", "QY", "QZ", "QW"))
     p.add_argument("--speed-mm-s", type=positive, default=5.)
     p.add_argument("--angular-speed-deg-s", type=positive, default=5.)
-    p.add_argument("--max-distance-mm", type=positive, default=100.)
-    p.add_argument("--max-angle-deg", type=positive, default=15.)
-    p.add_argument("--timeout-s", type=positive, default=60.)
+    p.add_argument("--max-distance-mm", type=positive, default=None, help="可选：限制本次最大平移，默认不设单次距离上限")
+    p.add_argument("--max-angle-deg", type=positive, default=None, help="可选：限制本次最大旋转，默认不设单次角度上限")
+    p.add_argument("--timeout-s", type=positive, default=None, help="可选：移动等待时间；默认根据距离、角度和速度估算")
     p.add_argument("--pose-tolerance-mm", type=positive, default=2., help="实测 TCP 到位位置容差，默认 2 mm")
     p.add_argument("--pose-tolerance-deg", type=positive, default=1., help="实测 TCP 到位角度容差，默认 1 度")
     p.add_argument("--log-dir", type=Path, default=Path("outputs/tcp_moves"))
@@ -149,10 +149,25 @@ def build_target(args, state):
 
 def check_limits(args, current, target):
     distance, angle = pose_error(current, target)
-    if distance > args.max_distance_mm + 1e-9 or angle > args.max_angle_deg + 1e-9:
+    if not math.isfinite(distance) or not math.isfinite(angle):
+        raise ValueError("无法计算有限的目标距离或角度")
+    if ((args.max_distance_mm is not None and distance > args.max_distance_mm + 1e-9) or
+            (args.max_angle_deg is not None and angle > args.max_angle_deg + 1e-9)):
         raise ValueError("目标超出单次限值：%.3f mm / %.3f deg；允许 %.3f mm / %.3f deg" %
-                         (distance, angle, args.max_distance_mm, args.max_angle_deg))
+                         (distance, angle, args.max_distance_mm if args.max_distance_mm is not None else float('inf'),
+                          args.max_angle_deg if args.max_angle_deg is not None else float('inf')))
     return distance, angle
+
+
+def motion_timeout(args, current, target):
+    """Allow enough time for the requested interpolation; preserve explicit overrides."""
+    if args.timeout_s is not None:
+        return args.timeout_s
+    distance, angle = pose_error(current, target)
+    estimate = max(distance / args.speed_mm_s, angle / args.angular_speed_deg_s)
+    if not math.isfinite(estimate):
+        raise ValueError("目标运动时间无法表示为有限值")
+    return max(60., 2. * estimate + 15.)
 
 
 class SampleDrain:
@@ -254,7 +269,7 @@ class MoveSession:
         publisher = getattr(self.arm, "_publisher", None)
         if publisher is None:
             raise RuntimeError("命令 publisher 未连接")
-        deadline = self.monotonic() + min(5., self.args.timeout_s)
+        deadline = self.monotonic() + min(5., self.args.timeout_s if self.args.timeout_s is not None else 5.)
         while publisher.get_num_connections() < 1:
             self.observation()
             if self.monotonic() >= deadline:
@@ -265,6 +280,9 @@ class MoveSession:
         state = self.observation()
         current, target = build_target(target_args, state)
         self.show(state, current, target)
+        effective_timeout = motion_timeout(self.args, current, target)
+        self.output("移动等待上限 %.1f 秒（%s）" %
+                    (effective_timeout, "自动按行程和速度计算" if self.args.timeout_s is None else "手动指定"))
         record = {"schema":"bottle_tcp_move_v1", "arm": self.args.arm,
                   "real": self.args.real, "created_unix_ns":time.time_ns(),
                   "base_frame":state["base_frame"], "tcp_frame":state["arms"][self.args.arm]["tcp_frame"],
@@ -274,7 +292,8 @@ class MoveSession:
                   "software_speed_mm_s":self.args.speed_mm_s,
                   "software_angular_speed_deg_s":self.args.angular_speed_deg_s,
                   "max_distance_mm":self.args.max_distance_mm,
-                  "max_angle_deg":self.args.max_angle_deg, "timeout_s":self.args.timeout_s,
+                  "max_angle_deg":self.args.max_angle_deg, "timeout_s":effective_timeout,
+                  "timeout_mode":"automatic" if self.args.timeout_s is None else "explicit",
                   "pose_tolerance_mm":self.args.pose_tolerance_mm,
                   "pose_tolerance_deg":self.args.pose_tolerance_deg,
                   "event_handling":"source events drained during operator tool; not an experiment recording"}
@@ -318,7 +337,7 @@ class MoveSession:
                 self.check()
                 self.arm.move_linear(target, self.args.speed_mm_s, self.args.angular_speed_deg_s)
                 self.active = True
-                deadline = self.monotonic() + self.args.timeout_s
+                deadline = self.monotonic() + effective_timeout
                 while True:
                     final = self.observation()
                     final_pose = measured_pose(final, self.args.arm)

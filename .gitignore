@@ -14,3 +14,4 @@ station_profile.yaml
 .siwc-robot-probe/
 .bottle-agentic/
 account_*.json
+/backups/

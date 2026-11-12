@@ -1,0 +1,54 @@
+# TODO 模板，故意不可直接运行。所有 null 必须由实际测量/标定替换。
+# 不含可用于真实运动的示例数值，不要把 null 改为猜测值或单位矩阵。
+schema: markerless_bottle_calibration_v1
+unit: mm
+simulated: false
+target_id: current_green_bottle
+
+# TODO 选择实际使用的 left_wrist 或 right_wrist，并匹配挂载臂。
+camera_name: null
+camera_model: null  # TODO 明确为 pinhole 或 fisheye，须匹配标定算法。
+image_size_wh: null  # TODO [实际图像宽, 实际图像高]，不裁剪、不缩放。
+camera_matrix: null  # TODO 实测零skew的3x3内参。
+distortion_coefficients: null  # TODO pinhole: 4/5/8/12/14项；fisheye: 4项。
+camera_mount: eye_in_hand
+mount_tcp_side: null  # TODO left 或 right。
+T_tcp_camera_mm: null  # TODO 实测4x4变换，将相机点变换至挂载腕TCP，平移mm。
+
+# TODO 嵌入 build-appearance 输出的完整JSON对象，不是文件路径/文件名。
+# target_id、image_size_wh、simulated必须与此文件一致，保留content_sha256。
+appearance_profile: null
+
+model:
+  table_z_mm: null  # TODO 实测物理桌面在机器人基座系下的高度。
+  # TODO 绿色瓶身2..5个[距物理桌面高度mm, 该处外半径mm]截面。
+  body_profile_mm: null
+  # TODO 当前外凸白盖也须测量；格式同上，相机须高于完整瓶盖。
+  cap_profile_mm: null
+
+fit_limits:
+  xy_bounds_mm: null  # TODO [[xmin,xmax],[ymin,ymax]]，基座系物体轴心搜索范围。
+  max_contour_error_px: null  # TODO 无畸变像素平面上的轮廓支持函数RMS上限。
+  min_iou: null  # TODO 原始畸变图像mask的交并比下限，0<值<=1。
+  # TODO 局部图像误差敏感度上限，必须<=既有safety.margin_mm。
+  # 标定/尺寸/桌面等系统误差还需独立验收并另留余量，此值不是总误差上限。
+  max_position_uncertainty_mm: null
+  min_mask_area_px: null  # TODO 当前工作距离下可验收的最少绿色前景像素数。
+  min_border_px: null  # TODO 图像边界留白下限。
+  max_condition_number: null  # TODO 位置拟合Jacobian允许的最大条件数，>=1。
+  pixel_uncertainty_px: null  # TODO 依据独立轮廓标注/分割偏差设定，>0。
+  min_ray_plane_cos: null  # TODO 排除近水平视线，0<值<1。
+
+max_observation_age_s: null  # TODO 实测图像/位姿时序后确定，>0。
+max_pose_skew_s: null  # TODO 图像与挂载腕TCP允许的时间差，>0。
+
+# 以下是可追溯记录，不能仅填写“已标定”。站点哈希由真实站点文件取得。
+evidence:
+  station_hardware_hash: null
+  camera_intrinsics_record: null
+  hand_eye_record: null
+  bottle_and_cap_measurement_record: null
+  table_measurement_record: null
+  independent_xy_validation_record: null
+  image_pose_timing_record: null
+# calibration_sha256由validate_calibration规范化后生成，无需手工填写。

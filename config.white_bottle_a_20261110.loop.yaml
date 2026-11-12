@@ -1,0 +1,78 @@
+# New scene after base relocation. Generated offline; no hardware started.
+# 44 initial A attempts are external seed; 136 additional attempts give 180 total.
+# Set physical_setup_confirmed true only after the new A scene and protocol are confirmed.
+schema: a_skill_loop_v1
+skill_config: config.white_bottle_a_20261110.joint.skill.yaml
+reference_session: outputs/white_a_current_x5_20261110
+exploration_config: config.skill.a_loop.exploration.yaml
+action_axis: a
+physical_setup_confirmed: false
+target_definition:
+  id: white_bottle_a_contact_target_20261110_v1
+  description: 底盘换位后的本轮白瓶实验：以本轮初始化时现场接受并保存的理想 T0 双指轻触区域作为目标；固定瓶位、朝向及轻触力。仅碰到胶面不代表正常。
+  normal: 两指均在已确认的目标区域，接触稳定且不靠边；无需沿a调整。拿不准选未知。
+  needs_recovery: 已接触且观测足以判断，但相对目标区域明显偏前或偏后，需要沿a调整；偏移命令不是标签。
+  completion: 当前观测窗口中双指均回到已确认目标区域，接触稳定且不靠边；未达到选否，无法判断选未知。
+learning:
+  contact_policy:
+    include_successful_B: true
+    dd_pool: false
+  state_learning:
+    min_train_per_class: 4
+    min_calibration_per_class: 2
+    min_validation_per_class: 2
+  target_definition_id: white_bottle_a_contact_target_20261110_v1
+planner:
+  mode: llm
+  provider:
+    backend: chatgpt
+    model: null
+    callback_port: 8766
+    login_timeout_s: 600
+    open_browser: false
+    request_timeout_s: 120
+    proxy: http://127.0.0.1:18082
+budget:
+  max_rounds: 5
+  max_new_attempts: 136
+  max_batch_attempts: 48
+initial_A:
+  offsets_mm:
+  - -5
+  - -2.5
+  - 0
+  - 2.5
+  - 5
+  reps: 8
+  seed: 20261113
+development_B:
+  offsets_mm:
+  - -5
+  - 0
+  - 5
+  reps: 4
+  seed: 20261114
+independent_B:
+  offsets_mm:
+  - -5
+  - 0
+  - 5
+  reps: 8
+  seed: 20261115
+acceptance:
+  expected_role: development
+  min_trials: 12
+  min_normal: 3
+  min_needs: 3
+  min_target: 3
+  min_not_target: 3
+  min_verified_recoveries: 3
+  min_invocation_recall: 0.8
+  min_normal_specificity: 0.9
+  min_recovery_success_rate: 0.8
+  min_exit_recall: 0.8
+  max_rejection_rate: 0.2
+  max_false_success: 0
+  require_task_success: false
+  min_task_success_rate: 0.8
+seed: 20261110

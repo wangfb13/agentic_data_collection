@@ -1,0 +1,7 @@
+{
+  "spec": "skills/contact_position_a/spec.json",
+  "sources": ["outputs/state_graph/20261112_symbolic_v2/features/nodes_with_features.json"],
+  "out": "outputs/state_graph/20261112_symbolic_v3",
+  "validation_spec": "tests/fixtures/skill_toy/spec.json",
+  "forbidden_instance_literals": ["tcp_offset_a", "white_", "forcepolicy", "NeedShift", "HandoffReady", "kinematic"]
+}

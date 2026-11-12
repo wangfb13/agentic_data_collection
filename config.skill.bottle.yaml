@@ -1,0 +1,50 @@
+schema: bottle_skill_config_v1
+base_config: config.e1e2.yaml
+context:
+  task: bottle
+  contact_protocol: fixed_orientation_a
+runtime:
+  required_context:
+    task: bottle
+    contact_protocol: fixed_orientation_a
+    probe_target_sdk: 1.5
+  target:
+    meaning: stable bilateral interior contact at calibrated reference before squeeze/lift
+    min_stable_duration_s: 0.2
+    confirmation_windows: 2
+  max_regrasps: 3
+  max_total_action_mm: 25.0
+  max_observation_age_s: 2.0
+  tracking_tolerance_mm: 2.0
+  action_axis: a
+  action_unit: mm
+  execution_interface: open_retreat_translate_reapproach_probe
+collection:
+  offsets_mm: [-10, -5, 0, 5, 10]
+  reps: 4
+  seed: 20261105
+variables:
+  a:
+    meaning: insertion direction in original T0 local frame
+    unit: mm
+    execution: MotionBounds.a
+    runtime_input: false
+  contact_height_l:
+    meaning: orthogonal local l contact position; world height requires measured T0
+    unit: mm
+    execution: ProbeBounds.target/perturbation.l_mm
+    runtime_input: false
+  probe_force:
+    meaning: mean normal force in SDK units; not calibrated newtons
+    unit: sdk
+    execution: force.target * force.probe_fraction
+    runtime_input: true
+memory:
+  enabled: true
+  source_task_cost_separate: true
+  path: outputs/rsi_method_memory
+
+# Define cells from training/development BEFORE freezing an independent B run.
+# Empty: no unearned continuous operating range; exact-point evidence only.
+certification:
+  observation_cells: []

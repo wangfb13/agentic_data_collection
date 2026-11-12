@@ -168,11 +168,30 @@ class MoveTcpTests(unittest.TestCase):
                     self.args(flag, value)
 
     def test_limits_reject_large_translation_and_rotation(self):
+        _, target = cli.build_target(self.args("--xyz-mm", "101", "0", "0"), state())
+        self.assertEqual(target[0, 3], 101.)
         with self.assertRaisesRegex(ValueError, "单次限值"):
-            cli.build_target(self.args("--xyz-mm", "101", "0", "0"), state())
-        args = self.args("--xyz-mm", "0", "0", "0", "--quaternion-xyzw", "0", "0", "1", "0")
+            cli.build_target(self.args("--xyz-mm", "101", "0", "0", "--max-distance-mm", "100"), state())
+        args = self.args("--xyz-mm", "0", "0", "0", "--quaternion-xyzw", "0", "0", "1", "0", "--max-angle-deg", "15")
         with self.assertRaisesRegex(ValueError, "单次限值"):
             cli.build_target(args, state())
+
+    def test_long_move_gets_automatic_budget_and_explicit_timeout_is_respected(self):
+        args = self.args("--xyz-mm", "1000", "0", "0", "--speed-mm-s", "5")
+        current, target = cli.build_target(args, state())
+        self.assertEqual(cli.motion_timeout(args, current, target), 415.)
+        args = self.args("--xyz-mm", "1000", "0", "0", "--timeout-s", "23")
+        self.assertEqual(cli.motion_timeout(args, current, target), 23.)
+
+    def test_long_target_reaches_fake_arm_and_records_automatic_budget(self):
+        result, arm, _, _ = self.main(["--real", "--xyz-mm", "500", "0", "0"])
+        self.assertEqual(result, 0)
+        self.assertEqual(arm.moves, 1)
+        log = self.records()[0]
+        self.assertEqual(log["result"], "reached_by_measured_feedback")
+        self.assertIsNone(log["max_distance_mm"])
+        self.assertEqual(log["timeout_mode"], "automatic")
+        self.assertEqual(log["timeout_s"], 215.)
 
     def pose_file(self, data):
         path = self.path / "pose.json"

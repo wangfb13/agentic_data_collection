@@ -1,0 +1,201 @@
+{
+  "schema": "skill_spec_v3",
+  "skill_id": "toy_2d",
+  "task": {
+    "object_category": "synthetic_contact",
+    "hidden_object_properties": [
+      "payload_class"
+    ],
+    "action_space": {
+      "id": "translation_xy",
+      "dim": 2,
+      "names": [
+        "dx",
+        "dy"
+      ],
+      "max_step": [
+        1,
+        1
+      ],
+      "frame": "local",
+      "candidate_levels": [
+        [
+          -1,
+          0,
+          1
+        ],
+        [
+          -1,
+          0,
+          1
+        ]
+      ]
+    }
+  },
+  "adapters": {
+    "trials": "tests.fixtures.skill_toy.adapter:iter_trials",
+    "action": "tests.fixtures.skill_toy.adapter:action",
+    "executor": "tests.fixtures.skill_toy.adapter:executor"
+  },
+  "observation": {
+    "window": {
+      "extractor": "tests.fixtures.skill_toy.adapter:windows",
+      "requires": [
+        "observable"
+      ]
+    },
+    "modalities": {
+      "geometry": {
+        "extractor": "tests.fixtures.skill_toy.adapter:geometry",
+        "version": "toy_geometry_1"
+      },
+      "load": {
+        "extractor": "tests.fixtures.skill_toy.adapter:load",
+        "version": "toy_load_1"
+      },
+      "image": {
+        "extractor": "tests.fixtures.skill_toy.adapter:image",
+        "version": "toy_image_1",
+        "weight": 0.5
+      }
+    },
+    "record_only": [
+      "payload_class",
+      "context",
+      "controller_setting"
+    ]
+  },
+  "post_conditions": [
+    {
+      "id": "centered",
+      "evaluator": "tests.fixtures.skill_toy.adapter:post",
+      "consumer": {
+        "controller": "synthetic"
+      },
+      "p_prior": [
+        1,
+        1
+      ],
+      "p_min": 0.05,
+      "ready_p": 0.8
+    },
+    {
+      "id": "in_region",
+      "evaluator": "tests.fixtures.skill_toy.adapter:post",
+      "consumer": {
+        "controller": "synthetic"
+      },
+      "p_prior": [
+        1,
+        1
+      ],
+      "p_min": 0.05,
+      "ready_p": 0.8
+    }
+  ],
+  "active_post_condition": "centered",
+  "perturbation_variables": {
+    "x": {
+      "kind": "continuous",
+      "envelope": [
+        -2,
+        2
+      ],
+      "reference": 0,
+      "nominal_step": 0.25,
+      "active": true
+    },
+    "y": {
+      "kind": "continuous",
+      "envelope": [
+        -2,
+        2
+      ],
+      "reference": 0,
+      "nominal_step": 0.25,
+      "active": true
+    },
+    "context": {
+      "kind": "categorical",
+      "levels": [
+        "context_0",
+        "context_1"
+      ],
+      "reference": "context_0",
+      "active": false
+    },
+    "payload_class": {
+      "kind": "object_property",
+      "levels": [
+        "soft",
+        "hard"
+      ],
+      "observable_at_deploy": false
+    },
+    "controller_setting": {
+      "kind": "protocol",
+      "levels": [
+        "standard",
+        "alternative"
+      ],
+      "reference": "standard"
+    }
+  },
+  "safety_envelope": {
+    "max_action": [
+      1,
+      1
+    ]
+  },
+  "noise": {
+    "alpha": 0.05,
+    "pca_dim": 16
+  },
+  "graph": {
+    "knn": 10,
+    "step_cost": 1.0,
+    "uncertainty_cost": 1.0
+  },
+  "dynamics": {
+    "inputs": [
+      "geometry",
+      "load"
+    ],
+    "targets": {
+      "geometry": [
+        0,
+        1
+      ],
+      "load": [
+        0,
+        1
+      ]
+    },
+    "ensemble": 3,
+    "hidden": [
+      12,
+      12
+    ],
+    "max_iter": 120,
+    "min_transitions": 6,
+    "max_uncertainty": 2.0
+  },
+  "models": {
+    "ensemble": 3,
+    "min_value_nodes": 6,
+    "min_policy_transitions": 6,
+    "include_inferred_policy": false
+  },
+  "validation": {
+    "folds": 3
+  },
+  "generalization": {
+    "variable": "context"
+  },
+  "runtime": {
+    "max_steps": 3
+  },
+  "budget": {
+    "max_new_trials": 30
+  }
+}

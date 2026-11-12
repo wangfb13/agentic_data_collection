@@ -1,5 +1,13 @@
 # 药瓶抓取实验：当前功能与操作说明
 
+> **a 轴完整主任务（2026-11-08）**：`bash run_on_5090.sh a-axis check` 离线检查已有主模型与恢复 skill。显式 `a-axis run --real` 走主模型先执行、接触暂停、恢复、退出、按新观测继续任务的链路；`--route pilot` 保留受控前奏。独立记录 skill 完成、实际主动作发送与人工任务结果。见 [a 轴现场验证指南](docs/A_AXIS_MAIN_TASK_zh.md)。本轮只做离线验证，未启动真机，skill 仍为 development。
+
+> **白瓶和绿瓶的无标记入口**：白瓶使用 `build-appearance --appearance-mode white --background-mask 背景标注.png`，绿瓶使用 `--appearance-mode green`（默认）。两者分别保存外观、实测外形、标定和示教参考，进入相同的定位与运动检查；不会自动在两瓶之间切换。详情见 [白瓶与绿瓶指南](docs/WHITE_AND_GREEN_BOTTLES_zh.md)。白瓶真实误差和允许场景仍需现场验收。
+
+> **当前药瓶无标记视觉定位（2026-11-08）**：`vision-stage1` 已支持绿色瓶身分割 → 实测外形/相机标定定位 → 示教参考目标 → 原有边界、完整路径与开爪运动检查。见 [无标记图像、标定及验收指南](docs/MARKERLESS_BOTTLE_GUIDE_zh.md)。只针对已知药瓶直立于已标定水平桌面的场景，视觉估计 XY，Z 来自桌面约束，yaw 未观测。已完成离线代码测试，尚未现场标定/验收；不代表自由六维定位或自主 A/B 技能学习。旧 ArUco 配置保留独立兼容入口，无自动回退。
+
+> **观测歧义验证（2026-11-05）**：新增独立的 `analyze_ambiguity` 离线诊断和 `ambiguity plan / collect --real` 小范围 a/l/倾斜轻触实验，见 [操作指南](docs/AMBIGUITY_GUIDE_zh.md)。机器人关闭时可分析旧数据、生成计划；新实验只做 PROBE，不提起，不改变现有 RSI/setup/run，也不把多维数据自动加入一维训练。[当前 Agent 提示词原文](docs/CURRENT_AGENT_PROMPT_zh.md) 已单独列出，现有 Agent 仍限制为一维采集方法。
+
 > **RSI 方法改进入口**：见 [RSI 操作指南](docs/RSI_GUIDE_zh.md) 和 [设计与证据说明](docs/RSI_DESIGN.md)。新任务默认使用精简采集，可用 `rsi run --real --seed-campaign 旧RSI目录 --out 新目录` 复用旧 A 数据、减少重复并进行分阶段对照。原 `agentic run` 和已冻结 RSI 会话保持原协议；只有独立确认通过才晋升方法，预算结束不代表已证明递归改进。
 
 > **Agentic 现在由 Agent 直接制定下一批采集计划**：见 [操作指南](AGENTIC_GUIDE_zh.md) 和 [自拟计划协议与停止条件](docs/AGENTIC_PLANNING_20261030.md)。Agent 根据实际数据提出 A/B 条件、各点偏移与次数、假设、证据和预期结果；本地检查后执行，再分析并更新。原手动 E1/E2 和 setup/run 保留。
@@ -513,3 +521,19 @@ bash run_on_5090.sh move-tcp --arm right --direction z+ --distance-mm 5 --frame 
 - 本指南描述右臂站点。更换实验臂、TCP、工具或瓶位基准，需要相应设置／验收，不在同一 session 中随意切换。
 
 相关短指南：[日常操作](OPERATOR_GUIDE_zh.md) · [首次设置](docs/FIRST_SETUP.md) · [故障恢复](docs/RECOVERY.md) · [高级工具](docs/ADVANCED.md) · [修改记录](CHANGELOG.md)
+
+完整药瓶恢复 skill、a 轴离线闭环与独立 l 接触因素扩展：见 [运行及评测说明](docs/SKILL_LOOP_GUIDE_zh.md)。新入口 skill-collect / skill-offline / skill-feedback / skill-extension 均显式启用，旧入口保持兼容。
+
+
+## 视觉定位与示教边界第一阶段（显式启用）
+
+`vision-stage1` 将已测相机/标记几何、遥操作示教范围与原 `Runner` 的开爪运动和路径检查连接。默认离线；不会修改原 E1/E2、RSI 或技能模型。
+
+```bash
+bash run_on_5090.sh vision-stage1 --help
+.venv/bin/python -m pytest tests/test_vision_workspace.py tests/test_vision_localization.py tests/test_vision_motion.py tests/test_vision_stage1_cli.py -q
+```
+
+`build-workspace` 和 `preview` 仅处理文件；`teach --real` 为只读现场示教；`commission --real` 需完整站点门禁、真实标定和逐步 `MOVE` 确认。当前为 ArUco 标记辅助定位、保持姿态的开爪平移，不是无标记瓶子识别或接触恢复技能。物理路径尚需现场验收，离线通过不等于已验收。
+
+标定、坐标约定、示教、拒绝条件与现场验收见 [第一阶段操作指南](docs/VISION_STAGE1_GUIDE_zh.md)。

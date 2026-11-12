@@ -518,6 +518,9 @@ class RSICampaign:
                         [self.store.get(self.state['incumbent_method_id'])] + [m['method'] for m in memory]}.values())
         references = {'metrics': report['metrics'], 'diagnostics': report['diagnostics'],
                       'acquisition_features': cell_features(report, scope=self.settings['scope'], step_mm=self.settings['scope']['step_mm'])}
+        if self.settings.get('skill_feedback_report'):
+            from .skill_agent_bridge import skill_planning_reference
+            references['skill_development'] = skill_planning_reference(self.settings['skill_feedback_report'])
         if 'efficiency' in self.settings:
             references['historical_coverage'] = historical_coverage(report)
         for entry in memory:

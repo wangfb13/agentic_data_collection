@@ -1,0 +1,63 @@
+schema: a_skill_loop_v1
+skill_config: config.white_bottle_a_20261109.skill.yaml
+reference_session: outputs/white_a_current_x5_20261109
+exploration_config: config.skill.a_loop.exploration.yaml
+action_axis: a
+# Set true only in a new campaign after confirming the current physical scene,
+# white-bottle floor, and agreed target region. This file is initially offline.
+physical_setup_confirmed: false
+target_definition:
+  id: white_bottle_a_contact_target_v1
+  description: 固定瓶子、姿态及轻触力下，双指接触位于现场确认的参考目标区域；仅碰到胶面不代表正常。
+  normal: 两指均在已确认的目标区域，接触稳定且不靠边；无需沿a调整。拿不准选未知。
+  needs_recovery: 已接触且观测足以判断，但相对目标区域明显偏前或偏后，需要沿a调整；偏移命令不是标签。
+  completion: 当前观测窗口中双指均回到已确认目标区域，接触稳定且不靠边；未达到选否，无法判断选未知。
+learning:
+  contact_policy:
+    include_successful_B: true
+    dd_pool: false
+  state_learning:
+    min_train_per_class: 4
+    min_calibration_per_class: 2
+    min_validation_per_class: 2
+planner:
+  mode: llm
+  provider:
+    backend: chatgpt
+    model: null
+    callback_port: 8766
+    login_timeout_s: 600
+    open_browser: false
+    request_timeout_s: 120
+    proxy: http://127.0.0.1:18082
+budget:
+  max_rounds: 5
+  max_new_attempts: 180
+  max_batch_attempts: 48
+initial_A:
+  offsets_mm: [-5, -2.5, 0, 2.5, 5]
+  reps: 8
+  seed: 20261109
+development_B:
+  offsets_mm: [-5, 0, 5]
+  reps: 4
+  seed: 20261110
+independent_B:
+  offsets_mm: [-5, 0, 5]
+  reps: 8
+  seed: 20261111
+acceptance:
+  min_trials: 12
+  min_normal: 3
+  min_needs: 3
+  min_target: 3
+  min_not_target: 3
+  min_verified_recoveries: 3
+  min_invocation_recall: 0.8
+  min_normal_specificity: 0.9
+  min_recovery_success_rate: 0.8
+  min_exit_recall: 0.8
+  max_rejection_rate: 0.2
+  max_false_success: 0
+  require_task_success: false
+seed: 20261109

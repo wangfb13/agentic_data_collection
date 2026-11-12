@@ -1,0 +1,76 @@
+schema: rsi_config_v1
+base_config: config.skill.e1e2.yaml
+provider:
+  backend: chatgpt
+  model: null
+  proxy: http://127.0.0.1:18082
+  request_timeout_s: 120
+planning:
+  max_attempts: 3
+memory:
+  path: outputs/rsi_method_memory
+  mode: recursive
+  retrieval_limit: 5
+scope:
+  min_mm: -10.0
+  max_mm: 10.0
+  step_mm: 2.0
+bootstrap:
+  offsets_mm:
+  - -10
+  - -5
+  - 0
+  - 5
+  - 10
+  reps: 6
+comparison:
+  collection_trials_per_branch: 12
+  checkpoints:
+  - 12
+  batch_scan_trials: 4
+  offsets_mm:
+  - -10
+  - -5
+  - 0
+  - 5
+  - 10
+  reps: 2
+  min_trials: 20
+  min_effect: 0.05
+efficiency:
+  version: 1
+  max_reps_per_cell: 4
+  max_override_reps_per_cell: 8
+  coverage_weight: 0.5
+  coverage_radius_mm: 1.0
+  confirmation_reps: 4
+  screening_min_difference: 0.2
+final_validation:
+  offsets_mm:
+  - -10
+  - -5
+  - 0
+  - 5
+  - 10
+  reps: 4
+budget:
+  max_trials: 400
+  max_cycles: 3
+  max_seconds: 28800
+learning:
+  min_levels: 3
+  min_per_level: 2
+  min_validation_trials: 4
+  min_validation_coverage: 0.75
+  min_gain_mm: 0.1
+  target_mae_mm: 1.0
+  target_p90_mm: 2.0
+contact_policy:
+  seed: 20261102
+  epochs: 500
+  balance_session_validation: true
+seed: 20261102
+seed_sessions: []
+problem: null
+approval: campaign
+skill_feedback_report: null

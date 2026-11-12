@@ -1,0 +1,192 @@
+{
+  "schema": "symbolic_state_graph_config_v2",
+  "sources": [
+    "outputs/white_a_current_x5_20261110_fast",
+    "outputs/white_a_director_live_0330_20261110/batches/001/A",
+    "outputs/white_b_current_x5_dev_20261109",
+    "outputs/e1e2_A_formal01",
+    "outputs/e1e2_B_formal01",
+    "outputs/rsi_contact01/batches/*"
+  ],
+  "noise": {
+    "alpha": 0.05,
+    "pca_dim": 32,
+    "w_vis": 0.5,
+    "distance_modalities": [
+      "pos",
+      "force",
+      "open"
+    ]
+  },
+  "graph": {
+    "modalities": [
+      "pos",
+      "force",
+      "open"
+    ],
+    "knn": 10,
+    "max_action_mm": 15,
+    "kinematic_multiplier": 1.5,
+    "optional_edge_orientation": true,
+    "require_time_period": true,
+    "cross_session_kinematic": true,
+    "T0_position_tolerance_mm": 0.1,
+    "T0_rotation_tolerance_deg": 0.1
+  },
+  "facts": {
+    "nominal_step_mm": {
+      "a": 2.5
+    }
+  },
+  "folds": 5,
+  "spec": {
+    "skill": "a_axis_contact_recovery",
+    "envelope": {
+      "allowed_axes": [
+        "a",
+        "l"
+      ],
+      "range_mm": {
+        "a": [
+          -25,
+          25
+        ],
+        "l": [
+          -10,
+          10
+        ]
+      },
+      "max_action_mm": 15,
+      "finger_force_max_sdk": 15
+    },
+    "fixed_protocol": {
+      "probe_force_sdk": 1.5,
+      "target_force_sdk": 5.0,
+      "training_scope": "stable bilateral PROBE; downstream outcome is label only",
+      "downstream_controller": "e1e2_squeeze"
+    },
+    "variable_protocol": {
+      "closure_floor": {
+        "levels": [
+          0.336,
+          0.33
+        ]
+      }
+    },
+    "recordable_attributes": [
+      "closure_floor",
+      "sensor_version",
+      "time_period"
+    ],
+    "budget_left": 0,
+    "collection_config": {
+      "design": {
+        "bottles": [
+          "light",
+          "heavy"
+        ],
+        "zero_every": 8
+      },
+      "force": {
+        "target": 5.0,
+        "probe_fraction": 0.3
+      },
+      "motion": {
+        "max_grasp_offset_mm": 25
+      }
+    },
+    "budget_source": "offline historical replay; no new trial budget assumed"
+  },
+  "rule": {
+    "rule_id": "symbolic_initial",
+    "active_axes": [
+      "a"
+    ],
+    "range_mm": {
+      "a": [
+        -5,
+        5
+      ]
+    },
+    "nominal_step_mm": {
+      "a": 2.5
+    },
+    "objects": [
+      "white_light",
+      "white_heavy"
+    ],
+    "reps_policy": {
+      "per_object": 2
+    },
+    "parent_rule_id": null,
+    "reason": "Initial guide rule; offline only",
+    "evidence_refs": []
+  },
+  "provider_config": "config.white_bottle_a_20261110.live_0330_director.loop.yaml",
+  "provider_container": "daimon_ros1_das",
+  "source_features": "outputs/state_graph/20261112_symbolic_v1/features/nodes_with_features.json",
+  "feature_assets_from": "outputs/state_graph/20261112_symbolic_v1",
+  "primary_distance": "position_force_open",
+  "boundary_bootstrap": 300,
+  "replay_every_trials": 40,
+  "provenance": {
+    "historical_manifest": "outputs/state_graph/20261112_symbolic_v2/historical_adoption.json",
+    "periods": [
+      {
+        "id": "white_current_after_reported_cover_change",
+        "session_contains": "white_a_director_live_0330",
+        "evidence": "Operator reported replacing left cover before this .330 campaign; cohort identity, not a measured serial number."
+      },
+      {
+        "id": "legacy_x5_20261029_20261103",
+        "date_from": "2026-10-29",
+        "date_to": "2026-11-03",
+        "evidence": "Historical green-bottle era before reported right-X5 configuration change; per-day metrics additionally reported."
+      },
+      {
+        "id": "white_current_20261109",
+        "date_from": "2026-11-09",
+        "date_to": "2026-11-09",
+        "evidence": "Calendar-day cohort; physical cover revision not recorded."
+      },
+      {
+        "id": "white_current_before_reported_cover_change",
+        "date_from": "2026-11-10",
+        "date_to": "2026-11-10",
+        "evidence": "White reference batch before operator-reported left-cover replacement; cohort identity, not sensor calibration."
+      }
+    ]
+  },
+  "training": {
+    "modalities": [
+      "pos",
+      "force",
+      "open"
+    ],
+    "graph": {
+      "modalities": [
+        "pos",
+        "force",
+        "open"
+      ],
+      "knn": 10,
+      "max_action_mm": 15,
+      "kinematic_multiplier": 1.5,
+      "optional_edge_orientation": true,
+      "require_time_period": true,
+      "cross_session_kinematic": true,
+      "T0_position_tolerance_mm": 0.1,
+      "T0_rotation_tolerance_deg": 0.1
+    },
+    "noise": {
+      "alpha": 0.05,
+      "pca_dim": 32,
+      "w_vis": 0.5,
+      "distance_modalities": [
+        "pos",
+        "force",
+        "open"
+      ]
+    }
+  }
+}

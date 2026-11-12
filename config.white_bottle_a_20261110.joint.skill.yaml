@@ -1,0 +1,69 @@
+# New scene after base relocation. Generated offline; no hardware started.
+schema: bottle_skill_config_v1
+base_config: config.white_bottle_a_20261109.e1e2.yaml
+context:
+  task: bottle
+  contact_protocol: fixed_orientation_a
+runtime:
+  required_context:
+    task: bottle
+    contact_protocol: fixed_orientation_a
+    probe_target_sdk: 1.5
+  target:
+    meaning: stable bilateral interior contact at calibrated reference before squeeze/lift
+    min_stable_duration_s: 0.2
+    confirmation_windows: 2
+  max_regrasps: 3
+  max_total_action_mm: 25.0
+  max_observation_age_s: 2.0
+  tracking_tolerance_mm: 2.0
+  action_axis: a
+  action_unit: mm
+  execution_interface: open_retreat_translate_reapproach_probe
+collection:
+  offsets_mm:
+  - -5
+  - -2.5
+  - 0
+  - 2.5
+  - 5
+  reps: 8
+  seed: 20261113
+variables:
+  a:
+    meaning: insertion direction in original T0 local frame
+    unit: mm
+    execution: MotionBounds.a
+    runtime_input: false
+  contact_height_l:
+    meaning: orthogonal local l contact position; world height requires measured T0
+    unit: mm
+    execution: ProbeBounds.target/perturbation.l_mm
+    runtime_input: false
+  probe_force:
+    meaning: mean normal force in SDK units; not calibrated newtons
+    unit: sdk
+    execution: force.target * force.probe_fraction
+    runtime_input: true
+memory:
+  enabled: true
+  source_task_cost_separate: true
+  path: outputs/rsi_method_memory
+certification:
+  observation_cells: []
+target_definition:
+  id: white_bottle_a_contact_target_20261110_v1
+  description: 底盘换位后的本轮白瓶实验：以本轮初始化时现场接受并保存的理想 T0 双指轻触区域作为目标；固定瓶位、朝向及轻触力。仅碰到胶面不代表正常。
+  normal: 两指均在已确认的目标区域，接触稳定且不靠边；无需沿a调整。拿不准选未知。
+  needs_recovery: 已接触且观测足以判断，但相对目标区域明显偏前或偏后，需要沿a调整；偏移命令不是标签。
+  completion: 当前观测窗口中双指均回到已确认目标区域，接触稳定且不靠边；未达到选否，无法判断选未知。
+learning:
+  contact_policy:
+    include_successful_B: true
+    dd_pool: false
+  state_learning:
+    min_train_per_class: 4
+    min_calibration_per_class: 2
+    min_validation_per_class: 2
+  target_definition_id: white_bottle_a_contact_target_20261110_v1
+learning_mode: joint
