@@ -1,5 +1,7 @@
 # 药瓶抓取实验：当前功能与操作说明
 
+> **状态图与符号探索 V3（2026-11-12）**：已接入独立可选的 MAE / MAE＋力监督触觉编码特征，支持离线状态图、动力学、恢复策略与符号采集决策。见 [状态图说明](STATE_GRAPH_zh.md)、[V3 设计](docs/STATE_GRAPH_V3_CHANGES_zh.md) 和 [触觉编码器接入与运行](docs/STATE_GRAPH_TACTILE_ENCODER_zh.md)。模型权重、实验原始数据和生成结果不随代码提交。
+
 > **a 轴完整主任务（2026-11-08）**：`bash run_on_5090.sh a-axis check` 离线检查已有主模型与恢复 skill。显式 `a-axis run --real` 走主模型先执行、接触暂停、恢复、退出、按新观测继续任务的链路；`--route pilot` 保留受控前奏。独立记录 skill 完成、实际主动作发送与人工任务结果。见 [a 轴现场验证指南](docs/A_AXIS_MAIN_TASK_zh.md)。本轮只做离线验证，未启动真机，skill 仍为 development。
 
 > **白瓶和绿瓶的无标记入口**：白瓶使用 `build-appearance --appearance-mode white --background-mask 背景标注.png`，绿瓶使用 `--appearance-mode green`（默认）。两者分别保存外观、实测外形、标定和示教参考，进入相同的定位与运动检查；不会自动在两瓶之间切换。详情见 [白瓶与绿瓶指南](docs/WHITE_AND_GREEN_BOTTLES_zh.md)。白瓶真实误差和允许场景仍需现场验收。
@@ -537,3 +539,6 @@ bash run_on_5090.sh vision-stage1 --help
 `build-workspace` 和 `preview` 仅处理文件；`teach --real` 为只读现场示教；`commission --real` 需完整站点门禁、真实标定和逐步 `MOVE` 确认。当前为 ArUco 标记辅助定位、保持姿态的开爪平移，不是无标记瓶子识别或接触恢复技能。物理路径尚需现场验收，离线通过不等于已验收。
 
 标定、坐标约定、示教、拒绝条件与现场验收见 [第一阶段操作指南](docs/VISION_STAGE1_GUIDE_zh.md)。
+
+
+Agent 主导的技能采集、训练和 A/B 验证见 [技能闭环指南](docs/SKILL_LOOP_GUIDE_zh.md) 和 [状态集合与 Agent 主导决策](docs/AGENT_DIRECTOR_STATE_SET_zh.md)。
