@@ -12,7 +12,14 @@ def applicable_operators(facts,spec,rule,state=None):
     def find(pred):return [f for f in facts if f['pred']==pred and f['value']]
     if state.get('frozen_independent'):
         for f in find('indep_B_pass'):add('complete',[f])
+        add('validate_B',post_condition=active,role='independent',required_symbols=['Ready','NeedAction'])
         add('pause');return out
+    for pred,op in [('repeat_calibration_missing','collect_seed'),('consumer_evidence_missing','collect_outcomes'),('transition_evidence_missing','collect_transitions')]:
+        for f in find(pred):add(op,[f],post_condition=active)
+    for f in find('dev_B_gap'):
+        add('collect_transitions',[f],post_condition=active)
+        add('collect_outcomes',[f],post_condition=active)
+        add('train',[f])
     for name,definition in variables.items():
         setting=rule.get('variables',{}).get(name,{})
         enabled=setting.get('active',definition.get('active',True))
@@ -55,6 +62,8 @@ def applicable_operators(facts,spec,rule,state=None):
 def validate_decision(answer,context):
     required={'hypotheses_update','operator','args','premises','discriminates','plan','expected','reason'}
     if not isinstance(answer,dict) or not required<=set(answer):raise ValueError('Missing symbolic fields')
+    if not isinstance(answer['hypotheses_update'],list) or not all(isinstance(h,dict) for h in answer['hypotheses_update']):raise ValueError('Hypotheses update must be an array of objects')
+    if not isinstance(answer['discriminates'],list):raise ValueError('Discriminates must be an array')
     if not isinstance(answer['args'],dict) or not isinstance(answer['premises'],list):raise ValueError('Invalid arguments/premises')
     if not all(isinstance(answer[k],str) and answer[k] for k in ('expected','reason')):raise ValueError('Expected and reason must be strings')
     facts={f['id']:f for f in context['facts']}
@@ -62,17 +71,28 @@ def validate_decision(answer,context):
     op=answer['operator'];args=answer['args'];spec=context['spec'];variables=spec['perturbation_variables']
     matches=[c for c in context['applicable_operators'] if c['op']==op and all(args.get(k)==v for k,v in c['bindings'].items()) and set(c['premises_satisfied_by'])<=set(answer['premises'])]
     if not matches:raise ValueError('Operator is not applicable')
-    collection={'expand_range','densify','activate_variable','probe_hidden_variable','block_by_property','repeat_state','verify_edges','validate_B'}
+    collection={'collect_seed','collect_transitions','collect_outcomes','expand_range','densify','activate_variable','probe_hidden_variable','block_by_property','repeat_state','verify_edges','validate_B'}
     plan=answer['plan']
     if op not in collection:
         if plan is not None:raise ValueError('Noncollection operator must not carry a collection plan')
         if op=='request_capability' and not args.get('description'):raise ValueError('Describe the requested sensing/action capability')
         return answer
+    if op=='validate_B' and context.get('independent_plan') is not None and plan!=context['independent_plan']:
+        raise ValueError('Independent B must execute the predeclared frozen plan unchanged')
     if not isinstance(plan,dict) or not isinstance(plan.get('cells'),list) or not plan['cells']:raise ValueError('Collection cells required')
     count=0
     for cell in plan['cells']:
         if type(cell.get('reps')) is not int or cell['reps']<1:raise ValueError('Positive repeat count required')
-        settings=cell.get('settings',{});blocks=cell.get('blocks',[{}]);count+=cell['reps']*len(blocks)
+        settings=cell.get('settings',{});blocks=cell.get('blocks',[{}]);
+        if not isinstance(settings,dict) or not isinstance(blocks,list) or not blocks:raise ValueError('Invalid settings/blocks')
+        from .skill_interface import normalize_action
+        actions=[normalize_action(a,spec) for a in cell.get('actions',[])]
+        if len(actions)>spec.get('runtime',{}).get('max_steps',3):raise ValueError('Too many actions in one trial')
+        if op=='collect_transitions' and not actions:raise ValueError('Transition collection requires explicit actions')
+        if op=='validate_B' and actions:raise ValueError('B executes the frozen candidate, not scripted corrections')
+        count+=cell['reps']*len(blocks)
+        for key,value in context.get('execution',{}).get('fixed_settings',{}).items():
+            if key in settings and settings[key]!=value:raise ValueError('Setting differs from the selected consumer protocol: '+key)
         for name,value in settings.items():
             if name not in variables:raise ValueError('Undeclared perturbation')
             var=variables[name]
@@ -80,9 +100,11 @@ def validate_decision(answer,context):
                 if type(value) not in (int,float) or not np.isfinite(value) or not var['envelope'][0]<=value<=var['envelope'][1]:raise ValueError('Setting outside envelope')
             elif value not in var['levels']:raise ValueError('Undeclared level')
         for block in blocks:
+            if any(k not in block for k in context.get('execution',{}).get('required_blocks',[])):raise ValueError('Plan must record the declared object property block')
             for name,value in block.items():
                 if name not in variables or variables[name]['kind']!='object_property' or value not in variables[name]['levels']:raise ValueError('Invalid block property')
     budget=context.get('budget_left',spec.get('budget',{}).get('max_new_trials',0))
+    budget=min(budget,spec.get('budget',{}).get('max_batch_trials',budget))
     if count>budget:raise ValueError('Plan exceeds remaining trial budget')
     var=args.get('var');definition=variables.get(var,{})
     values=[c['settings'].get(var) for c in plan['cells']] if var else []
@@ -94,6 +116,8 @@ def validate_decision(answer,context):
         if not any(x is not None and (x<lo or x>hi) for x in values):raise ValueError('Plan must sample the expanded range')
     if op=='densify':
         interval=args.get('interval')
+        if interval is None and args.get('region'):
+            interval=context['current_rule']['variables'][var]['range']
         if not interval or len(interval)!=2:raise ValueError('Densification interval required')
         observed=context.get('observed_positions',{}).get(var,[])
         fresh={x for x in values if x is not None and interval[0]<=x<=interval[1] and not any(np.isclose(x,old,atol=1e-6) for old in observed)}

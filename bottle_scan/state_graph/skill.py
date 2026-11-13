@@ -5,7 +5,7 @@ import time
 import numpy as np
 import joblib
 from .common import digest,write
-from .skill_interface import post_spec,model_observation,action_grid
+from .skill_interface import post_spec,model_observation,action_grid,normalize_action
 from .value import fit_value,predict_value
 from .policy import fit_policy,predict_policy
 from .dynamics import predict as predict_dynamics
@@ -16,7 +16,8 @@ def train_models(rows,graph,labels,noise,dynamics,spec,out=None):
     for c in spec['post_conditions']:
         models[c['id']]={'V':fit_value(rows,labels,noise,spec,c['id']),
                          'pi':fit_policy(rows,graph,labels,noise,spec,c['id'])}
-    bundle={'schema':'skill_bundle_v3','spec':spec,'noise':noise,'dynamics':dynamics,'models':models,'graph':graph,
+    support=[{k:r[k] for k in ('node_id','task_id','window_valid','obs','extractor_versions')} for r in rows]
+    bundle={'schema':'skill_bundle_v4','support':support,'labels':labels,'spec':spec,'noise':noise,'dynamics':dynamics,'models':models,'graph':graph,
             'graph_version':graph['graph_version'],'model_id':digest([graph['graph_version'],spec,noise['model_id']])[:24]}
     status={'post_conditions':{c:{k:{q:v.get(q) for q in ('status','n','required','inferred_samples')} for k,v in ms.items()} for c,ms in models.items()},
             'dynamics_status':dynamics.get('status'),'active_post_condition':spec['active_post_condition'],
@@ -57,10 +58,33 @@ class SymbolicRecoverySkill:
         cid=self.spec['active_post_condition'];condition=post_spec(self.spec,cid)
         models=self.bundle['models'][cid];v=predict_value(models['V'],row,self.bundle['noise'])
         if v['status']!='predicted':return {'state':'Unknown','value':v,'policy':None}
-        ready=v['V']<=-math.log(condition.get('ready_p',.8)) and v['p_hat']>=condition.get('ready_p',.8)
-        pi=None if ready else predict_policy(models['pi'],row,self.bundle['noise'])
-        state='ready' if ready else ('recoverable' if pi['status']=='predicted' else 'Unknown')
-        return {'state':state,'value':v,'policy':pi,'plan':None if ready or state=='Unknown' else optional_plan(self.bundle,row,pi)}
+        from .noise import measurement_distance
+        if row.get('task_id')!=self.bundle['graph']['task_id']:
+            return {'state':'Unknown','reason':'different_task','value':v,'policy':None}
+        support=[]
+        for anchor in self.bundle.get('support',[]):
+            if anchor['extractor_versions']!=row.get('extractor_versions'):continue
+            d=measurement_distance(row,anchor,self.bundle['noise'])
+            if d<=self.spec.get('runtime',{}).get('support_distance',1.):
+                label=self.bundle['graph']['reachability'][cid][anchor['node_id']]
+                support.append((d,label['status'],anchor['node_id']))
+        cfg=self.spec.get('runtime',{})
+        beta=v.get('exit_probability');invocation=v.get('invocation_probability')
+        ready=(any(s[1]=='ready' for s in support) and beta is not None and beta>=cfg.get('exit_classifier_p',.5)
+               and v['p_hat']>=condition.get('ready_p',.8))
+        if ready:return {'state':'ready','value':v,'policy':None,'plan':None,'support':support}
+        supported=any(s[1]=='recoverable' for s in support)
+        if not supported or invocation is None or invocation<cfg.get('invocation_classifier_p',.5):
+            return {'state':'Unknown','reason':'no_supported_recovery','value':v,'policy':None,'support':support}
+        pi=predict_policy(models['pi'],row,self.bundle['noise'])
+        if pi['status']!='predicted':return {'state':'Unknown','reason':'policy_untrained','value':v,'policy':pi}
+        if max(pi['std'])>cfg.get('max_action_std',4.):
+            return {'state':'Unknown','reason':'action_uncertainty','value':v,'policy':pi}
+        if np.linalg.norm(pi['u'])<cfg.get('min_action_norm',1e-6):
+            return {'state':'Unknown','reason':'no_nonzero_recovery_action','value':v,'policy':pi}
+        plan=optional_plan(self.bundle,row,pi)
+        return {'state':'recoverable','value':v,'policy':pi,'plan':plan,'support':support,
+                'action':normalize_action((plan or pi)['u'],self.spec)}
 
     def execute(self,adapter):
         cid=self.spec['active_post_condition'];maximum=self.spec.get('runtime',{}).get('max_steps',3)
@@ -82,7 +106,11 @@ class SymbolicRecoverySkill:
             if result['state']=='Unknown' or step==maximum:
                 emit({'event':'skill_incomplete','reason':'unknown' if result['state']=='Unknown' else 'max_steps'})
                 return {'completed':False,'reason':'unknown' if result['state']=='Unknown' else 'max_steps','steps':step,'events':self.events}
-            u=(result['plan'] or result['policy'])['u'];receipt=adapter.execute(u)
-            emit({'event':'action_executed','step':step,'u':u,'receipt':receipt})
+            u=(result['plan'] or result['policy'])['u'];action=result.get('action') or normalize_action(u,self.spec)
+            receipt=adapter.execute(action)
+            if not isinstance(receipt,dict) or not (receipt.get('applied') is True or receipt.get('completed') is True):
+                emit({'event':'skill_incomplete','reason':'action_not_completed'})
+                return {'completed':False,'reason':'action_not_completed','steps':step,'events':self.events}
+            emit({'event':'action_executed','step':step,'u':u,'action':action,'receipt':receipt})
             row=adapter.observe()
         raise AssertionError('Unreachable runtime branch')

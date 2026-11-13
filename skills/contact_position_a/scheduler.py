@@ -103,8 +103,8 @@ def trials_from_events(events,spec):
             descriptors=e['probe'].get('descriptors',[])
             # Match historical feature extraction: median geometry of the five
             # recorded independent source frames, using the saved unloaded image.
-            contacts=None;encoded_references={}
-            if e.get('raw_evidence',{}).get('streams') and e['probe'].get('window'):
+            contacts=e.get('live_contacts');encoded_references={}
+            if not e.get('live_features') and e.get('raw_evidence',{}).get('streams') and e['probe'].get('window'):
                 from .legacy_v2.contact_geometry import window_contact_geometry
                 import h5py
                 with np.load(e['raw_evidence']['dd_reference']) as z:
@@ -124,7 +124,7 @@ def trials_from_events(events,spec):
                                                           'indices':encoded_indices,'times_ns':[int(encoded['times'][i]) for i in encoded_indices]}
                         contacts.append(window_contact_geometry(frames,z[side],threshold=spec.get('contact_geometry',{}).get('depth_threshold',.022)))
             wrench=e['wrench']
-            if contacts is not None:
+            if not e.get('live_features') and contacts is not None:
                 with h5py.File(e['raw_evidence']['streams'],'r') as h:
                     vectors=[_median_stream(_stream(h,'wrench_'+side),e['probe']['stable_start_ns'],e['probe']['timestamp_ns'],(6,))[0] for side in ('left','right')]
                     if all(v is not None for v in vectors):wrench=np.concatenate(vectors).tolist()
@@ -135,10 +135,10 @@ def trials_from_events(events,spec):
                 if vision is None:vision=FrozenVision('cpu',spec['data']['visual_model_directory'])
                 zvis=vision.encode(read_wrist({'path':image['path']}))
             row={k:e.get(k) for k in ('node_id','session','trial_id','group_id','window_index','phase','t_ns','u_executed','u_receipt','previous_node_id','plan_coords','attrs','preconditions')}
-            row.update(is_terminal=e['node_id'] in handoffs,consumer_outcome=outcomes.get(e['node_id']),contacts=contacts,wrench=wrench,visual=zvis,tactile_frames=encoded_references,
+            row.update(recorded_features=e.get('live_features'),is_terminal=e['node_id'] in handoffs,consumer_outcome=outcomes.get(e['node_id']),contacts=contacts,wrench=wrench,visual=zvis,tactile_frames=encoded_references,
                 repeat_settings={'a_offset_mm':e['attrs'].get('planned_a_offset_mm'),'closure_floor':e['attrs'].get('closure_floor'),'approach_pose':e['attrs'].get('approach_pose')},
                 is_reference=e['attrs'].get('planned_a_offset_mm')==0,
-                provenance={**e['raw_evidence'],'trial_started_unix_ns':e.get('trial_started_unix_ns'),'source_type':'scheduler_episode'},
+                provenance={**e['raw_evidence'],'repeat_context':e.get('repeat_context',e['session']),'trial_started_unix_ns':e.get('trial_started_unix_ns'),'source_type':'scheduler_episode'},
                 extractor_versions={k:v['version'] for k,v in spec['observation']['modalities'].items()})
             windows.append(row)
         yield {'session':items[0]['session'],'trial_id':items[0]['trial_id'],'windows':windows}

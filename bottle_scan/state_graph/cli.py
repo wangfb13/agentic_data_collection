@@ -20,10 +20,12 @@ from .director_bridge import context,decide
 from .report import run_validation,render_report
 
 
-def build(rows,spec,out,validate=True,assessments=()):
+def build(rows,spec,out,validate=True,assessments=(),previous_clusters=None):
     out=Path(out);out.mkdir(parents=True,exist_ok=True)
     noise=fit_noise(rows,spec);f=fit_dynamics(rows,noise,spec)
     graph=build_graph(rows,noise,spec,f);labels=generate_labels(graph,rows,spec);clusters=cluster_nodes(rows,graph,noise,labels,spec)
+    from .clusters import reconcile_regions
+    clusters=reconcile_regions(clusters,previous_clusters)
     bundle,status=train_models(rows,graph,labels,noise,f,spec,out/'models')
     facts=generate_facts(graph,rows,labels,clusters,noise,spec,bundle)
     acceptance={}
@@ -46,10 +48,10 @@ def initial_rule(rows,spec):
         setting={'active':v.get('active',True)}
         if v['kind']=='continuous':
             values=[r['plan_coords'].get(name) for r in rows if isinstance(r['plan_coords'].get(name),(int,float))]
-            setting['range']=[min(values),max(values)] if values else list(v['envelope'])
+            setting['range']=[min(values),max(values)] if values else list(v.get('initial_range',v['envelope']))
         else:setting['levels']=v.get('levels',[])
         variables[name]=setting
-    return {'rule_id':rows[-1].get('rule_id') or rows[-1]['session'],'variables':variables,'post_condition':spec['active_post_condition']}
+    return {'rule_id':(rows[-1].get('rule_id') or rows[-1]['session']) if rows else 'rule_seed','variables':variables,'post_condition':spec['active_post_condition']}
 
 
 def history_replay(rows,spec,out,allow_agent=False,settings=None):

@@ -1,0 +1,36 @@
+{
+  "schema": "symbolic_campaign_config_v4",
+  "spec": "/home/dm/DM_das/bottle_grasp_experiment/skills/contact_position_a/spec.campaign_v4.json",
+  "sources": [],
+  "execution": {
+    "entry": "/home/dm/DM_das/contact_scheduler_20261104_experiment_b_v4_single_open_20261110/run_contact_261010.sh",
+    "scheduler_config": "/home/dm/DM_das/bottle_grasp_experiment/config.state_graph.v4_scheduler.json",
+    "executable_variables": [
+      "a_offset_mm",
+      "closure_floor",
+      "mass_class"
+    ],
+    "executable_actions": [
+      "tcp_translation_a"
+    ],
+    "environment": {
+      "RIGHT_FORCE_POLICY_PATH": "/home/dm/DM_das/starvla-feat-sparky_x5_starvla/outputs/forcepolicy/mlp_delta_sequence/best.pt"
+    },
+    "outcomes": "L1 automatically from actual ForcePolicy; L2/L3 from on-site review. No synthetic success.",
+    "fixed_settings": {
+      "closure_floor": 0.33,
+      "l_offset_mm": 0,
+      "approach_pose": "pose_0"
+    },
+    "required_blocks": [
+      "mass_class"
+    ]
+  },
+  "provider_settings": {
+    "backend": "chatgpt",
+    "model": null,
+    "open_browser": false,
+    "request_timeout_s": 120,
+    "proxy": "http://127.0.0.1:18082"
+  }
+}

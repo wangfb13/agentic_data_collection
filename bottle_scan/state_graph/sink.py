@@ -1,4 +1,4 @@
-"""Separate empirical post-condition probabilities and stochastic sink costs."""
+"""Separate empirical post-condition probabilities and zero-cost Ready sinks; direct handoff risk is separate."""
 import math
 import numpy as np
 
@@ -13,12 +13,18 @@ def estimate_sinks(rows,D,spec):
         terminal=[i for i,r in enumerate(rows) if r.get('is_terminal') and r.get('post',{}).get(cid,{}).get('evaluated') is True]
         for i,row in enumerate(rows):
             near=[j for j in terminal if i==j or D[i,j]<=1]
-            successes=sum(rows[j]['post'][cid]['success'] is True for j in near);n=len(near)
+            # Count independent trial groups, not correlated windows as repeats.
+            from .common import group_id
+            grouped={}
+            for j in near:grouped.setdefault(group_id(rows[j]),[]).append(j)
+            votes=[all(rows[j]['post'][cid]['success'] is True for j in ids) for ids in grouped.values()]
+            successes=sum(votes);n=len(votes)
             p=(successes+alpha)/(n+alpha+beta)
-            values[row['node_id']]={'p_hat':float(p),'successes':successes,'n':n,'terminal_ids':[rows[j]['node_id'] for j in near]}
-            if n and p>=c.get('p_min',.05):
+            ready=n>=c.get('min_ready_trials',3) and p>=c.get('ready_p',.8)
+            values[row['node_id']]={'ready':ready,'direct_handoff_risk':-math.log(p),'p_hat':float(p),'successes':successes,'n':n,'terminal_ids':[rows[j]['node_id'] for j in near]}
+            if ready:
                 edges.append({'source':row['node_id'],'target':sink_id(cid),'kind':'sink','post_condition':cid,
-                              'cost':-math.log(p),'p_hat':p,'n':n,'evidence':values[row['node_id']]['terminal_ids']})
+                              'cost':0.,'p_hat':p,'n':n,'evidence':values[row['node_id']]['terminal_ids']})
         probability[cid]=values
     return probability,edges
 

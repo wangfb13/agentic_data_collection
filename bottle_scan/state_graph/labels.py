@@ -6,7 +6,7 @@ from .sink import sink_id
 
 
 def shortest_path(graph,source,condition):
-    edges=graph['edges'];adj={}
+    edges=[e for e in graph['edges'] if e['kind'] in ('observed','inferred','sink') and e.get('executable',True)];adj={}
     for edge in edges:adj.setdefault(edge['source'],[]).append(edge)
     target=sink_id(condition);queue=[(0.,0,source,[])];best={source:(0.,0)}
     while queue:
@@ -26,10 +26,12 @@ def generate_labels(graph,rows,spec):
         cid=c['id'];R=graph['R'][cid]
         for row in rows:
             ident=row['node_id'];state=graph['reachability'][cid][ident]['status'];path=shortest_path(graph,ident,cid) if R[ident] is not None else None
-            action=sum((np.asarray(e['u']) for e in path if e.get('u') is not None),np.zeros(dim)) if path is not None else None
+            steps=[e for e in (path or []) if e['kind'] in ('observed','inferred')]
+            action=steps[0].get('u') if steps else ([0.]*dim if state=='ready' else None)
+            actions=[e.get('action',{'kind':spec['task']['action_space'].get('id','vector'),'u':e.get('u')}) for e in steps]
             labels.append({'node_id':ident,'post_condition':cid,'status':state,'invocation_label':0 if state=='ready' else (1 if state=='recoverable' else None),
-                           'exit_label':state=='ready','value_target':R[ident],'p_target':graph['probabilities'][cid][ident]['p_hat'],
-                           'action_target':None if action is None else action.tolist(),'path_edge_ids':[] if path is None else [e['edge_id'] for e in path]})
+                           'exit_label':state=='ready','value_target':R[ident],'p_target':graph['probabilities'][cid][ident]['p_hat'],'p_evidence_count':graph['probabilities'][cid][ident].get('n',0),
+                           'action_target':action,'action_sequence':actions,'first_action':actions[0] if actions else None,'path_edge_ids':[] if path is None else [e['edge_id'] for e in path]})
         for e in graph['edges']:
             if e['kind'] not in ('observed','inferred'):continue
             a,b=R[e['source']],R[e['target']]

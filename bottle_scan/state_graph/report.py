@@ -33,6 +33,7 @@ def grouped_diagnostics(rows,spec,out):
     out.mkdir(parents=True,exist_ok=True);folds=group_folds(rows,spec.get('validation',{}).get('folds',5))
     modalities=list(spec['observation']['modalities']);coords=sorted({k for r in rows for k,v in r.get('plan_coords',{}).items() if isinstance(v,(int,float))})
     probes={n:{'coordinates':{v:[] for v in coords},'post_conditions':{p['id']:[] for p in spec['post_conditions']}} for n in modalities}
+    held_repeats=[];baseline_scores={p['id']:[] for p in spec['post_conditions']}
     calibration={p['id']:[] for p in spec['post_conditions']};dynamics=[];model_checks={p['id']:[] for p in spec['post_conditions']};evidence=[]
     for fold,(tr,te) in enumerate(folds):
         print('grouped validation fold',fold+1,len(folds),flush=True)
@@ -53,6 +54,11 @@ def grouped_diagnostics(rows,spec,out):
                 if len(set(y))<2 or not b:continue
                 classifier=Ridge(alpha=1.).fit(X[a],y);pred=classifier.predict(Z[b])
                 probes[name]['post_conditions'][cid].extend({'node_id':held[i]['node_id'],'success':int(held[i]['post'][cid]['success']),'prediction':float(v)} for i,v in zip(b,pred))
+        H=pairwise_distances(held,nm)
+        for i,a in enumerate(held):
+            for j,b in enumerate(held[:i]):
+                if a.get('window_index',0)==b.get('window_index',0)==0 and a.get('repeat_key')==b.get('repeat_key') and group_id(a)!=group_id(b):
+                    held_repeats.append({'fold':fold,'nodes':[a['node_id'],b['node_id']],'distance':float(H[i,j]),'within_noise':bool(H[i,j]<=1)})
         for p in spec['post_conditions']:calibration[p['id']]+=heldout_probability(held,train,nm,spec,p['id'])
         if not all(x['status']=='ready' for x in nm['modalities'].values()):continue
         f=fit_dynamics(train,nm,spec,seed=fold);fd=evaluate_dynamics(f,held,spec);dynamics+=fd['samples']
@@ -64,10 +70,21 @@ def grouped_diagnostics(rows,spec,out):
         lookup={(l['post_condition'],l['node_id']):l for l in held_labels['nodes']}
         for p in spec['post_conditions']:
             cid=p['id'];ms=bundle['models'][cid]
+            terminal_train=[r for r in train if r.get('is_terminal') and r['post'][cid]['evaluated']]
+            if terminal_train:
+                from .noise import feature_vector
+                features=np.array([feature_vector(r,nm) for r in terminal_train]);truth=np.array([r['post'][cid]['success'] for r in terminal_train],float)
+                scale=StandardScaler().fit(features);direct=Ridge(alpha=1).fit(scale.transform(features),truth)
+                for r in held:
+                    if not r.get('is_terminal') or not r['post'][cid]['evaluated']:continue
+                    pv=predict_value(ms['V'],r,nm);x=feature_vector(r,nm)[None]
+                    baseline_scores[cid].append({'node_id':r['node_id'],'truth':int(r['post'][cid]['success']),'constant':float(truth.mean()),'direct':float(np.clip(direct.predict(scale.transform(x))[0],0,1)),
+                                                'graph_value_probability':pv.get('p_hat')})
+            train_values=[x['value_target'] for x in labels['nodes'] if x['post_condition']==cid and x['value_target'] is not None]
             for row in held:
                 label=lookup[cid,row['node_id']];prediction=predict_value(ms['V'],row,nm)
                 if label['value_target'] is not None and prediction['status']=='predicted':
-                    model_checks[cid].append({'kind':'value','node_id':row['node_id'],'actual':label['value_target'],'prediction':prediction['V'],'error':abs(prediction['V']-label['value_target'])})
+                    model_checks[cid].append({'kind':'value','node_id':row['node_id'],'actual':label['value_target'],'prediction':prediction['V'],'constant_error':abs(np.mean(train_values)-label['value_target']) if train_values else None,'error':abs(prediction['V']-label['value_target'])})
             for t in transitions(held,spec):
                 a,b=held_graph['R'][cid][t['source']['node_id']],held_graph['R'][cid][t['target']['node_id']]
                 prediction=predict_policy(ms['pi'],t['source'],nm)
@@ -84,15 +101,17 @@ def grouped_diagnostics(rows,spec,out):
     V6={'status':'computed' if dynamics else 'unavailable','n':len(dynamics),'endpoint_within_noise':mean([s['correct_within_noise'] for s in dynamics]),
         'variance_augmented_within_noise':mean([s['variance_augmented_distance']<=1 for s in dynamics]),
         'sigma_2x_coverage':mean([float(np.mean(s['within_2sigma'])) for s in dynamics]),
-        'p_off_auc':auc([s['off_label'] for s in dynamics],[s['p_off'] for s in dynamics]),'samples':dynamics,
+        'p_off_auc':auc([s['off_label'] for s in dynamics],[s['p_off'] for s in dynamics]),'samples':dynamics,'raw_component_mae':np.mean([s['absolute_error'] for s in dynamics],axis=0).tolist() if dynamics else None,
+        'baselines':{name:{'raw_component_mae':np.mean([s['baseline_absolute_error'][name] for s in dynamics],axis=0).tolist() if dynamics else None} for name in ('identity','mean_delta','linear')},
         'interpretation':'Sigma is ensemble spread; reported coverage is measured, not assumed calibrated. Off-event labels are model residuals, not causal event labels.'}
     V8={}
     for cid,checks in model_checks.items():
         val=[s for s in checks if s['kind']=='value'];pol=[s for s in checks if s['kind']=='policy'];supported=[s for s in pol if s['action_supported_by_logged_transition']]
-        V8[cid]={'value_mae':mean([s['error'] for s in val]),'value_n':len(val),'policy_action_mae':mean([s['action_error'] for s in pol]),'policy_n':len(pol),
+        V8[cid]={'constant_value_mae':mean([s['constant_error'] for s in val if s['constant_error'] is not None]),'value_mae':mean([s['error'] for s in val]),'value_n':len(val),'policy_action_mae':mean([s['action_error'] for s in pol]),'policy_n':len(pol),
                  'logged_R_descent_rate':mean([s['logged_R_decreased'] for s in pol]),'policy_supported_n':len(supported),
                  'policy_supported_R_descent_rate':mean([s['logged_R_decreased'] for s in supported]),'checks':checks}
-    return {'V2':{'status':'computed','probes':V2,'split':'Whole trial groups; train-only scaling/PCA; outcome scores come from an auxiliary Ridge probe; AUC uses its unbounded linear score.'},
+    baseline_report={cid:{name:{'brier':mean([(s[name]-s['truth'])**2 for s in values if s[name] is not None]),'n':sum(s[name] is not None for s in values)} for name in ('constant','direct','graph_value_probability')} for cid,values in baseline_scores.items()}
+    return {'heldout_repeatability':{'pairs':len(held_repeats),'fraction_within_noise':mean([s['within_noise'] for s in held_repeats]),'samples':held_repeats},'outcome_baselines':baseline_report,'V2':{'status':'computed','probes':V2,'split':'Whole trial groups; train-only scaling/PCA; outcome scores come from an auxiliary Ridge probe; AUC uses its unbounded linear score.'},
             'V3':{c:reliability(values) for c,values in calibration.items()},'V6':V6,'V8':V8,'fold_evidence':evidence}
 
 
@@ -104,7 +123,7 @@ def run_validation(rows,spec,noise,graph,labels,clusters,facts,out):
         if r.get('is_reference') and r.get('window_index',0)==0:zero[r['repeat_key']].append(i)
     pairs=[(a,b) for group in zero.values() for j,a in enumerate(group) for b in group[:j] if group_id(rows[a])!=group_id(rows[b])]
     V1={'status':'computed' if pairs else 'unavailable','pairs':len(pairs),'fraction_within_noise':mean([D[a,b]<=1 for a,b in pairs]),'incomparable':sum(not np.isfinite(D[a,b]) for a,b in pairs),
-        'notes':'Repeatability using fitted repeat noise; no protocol/period/property hard gate.'}
+        'scope':'training_fit_check_only','notes':'Use heldout_repeatability for evaluation; this fitted repeat check is not independent validation.'}
     grouped=grouped_diagnostics(rows,spec,out/'group_cv')
     posts=[p['id'] for p in spec['post_conditions']];joint=[]
     for i,c in enumerate(posts):
@@ -158,7 +177,7 @@ def cross_condition_generalization(rows,spec,out):
 def render_report(reports,fixture,path):
     lines=['# 通用符号状态图 V3 离线报告','',
            '本次只做代码、历史数据分析与合成通用性验证。未启动机器人；没有把历史后置条件结果改写为未实测消费者的结果。','',
-           '主距离由规格声明的观测组成；任务是唯一门控，协议、时期、隐藏物体属性仅记录。汇点按后置条件分开，用 Beta 平滑概率与 −log p 代价。运动学边已移除，推断边来自观测动力学。','',
+           '主距离由规格声明的观测组成；任务是唯一门控，协议、时期、隐藏物体属性仅记录。只有有实测支持的 Ready 节点以零代价连到汇点；相似边不参与恢复距离。Beta 平滑概率与直接交接风险另报。运动学边已移除，推断边来自观测动力学。','',
            'V、π、f 的全部设计矩阵仅来自 obs 和 f 所需的动作。坐标只用于探针目标和实验规划，记录属性只用于分析。','',
            '重复噪声额外修正了估计组均值消耗的自由度：每组残差乘 sqrt(n/(n−1))，再做 Ledoit–Wolf 收缩及 2Σ。否则只有两次重复时，Σ 会被低估一半。本轮所有真实/合成任务及折内估计统一使用此公式；旧版产物不变。','']
     for report in reports:

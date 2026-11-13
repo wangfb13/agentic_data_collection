@@ -20,11 +20,16 @@ def extract_nodes(sources,spec,out=None):
                        repeat_settings=window.get('repeat_settings',{}),is_reference=bool(window.get('is_reference')),
                        is_terminal=bool(window.get('is_terminal')),post={},
                        provenance=window.get('provenance',{}),previous_node_id=window.get('previous_node_id'))
-            for k in ('evaluation_only','frozen_independent','evaluation_scope','rule_id','legacy_labels'):
+            for k in ('evaluation_only','frozen_independent','evaluation_scope','rule_id','legacy_labels','action_executed'):
                 if k in window:row[k]=window[k]
             names=set(spec['observation'].get('record_only',[]))|set(spec.get('perturbation_variables',{}))
             row['attrs']={k:window.get('attrs',{}).get(k) for k in names}
             for name,modality in spec['observation']['modalities'].items():
+                recorded=window.get('recorded_features')
+                if recorded:
+                    row['obs'][name]=recorded['obs'][name];row['extractor_versions'][name]=recorded['extractor_versions'][name]
+                    row.setdefault('feature_evidence',{})[name]=recorded.get('feature_evidence',{}).get(name,{})
+                    continue
                 fn=load_callable(modality['extractor'])
                 extracted=fn(window,spec)
                 if isinstance(extracted,dict) and 'values' in extracted:

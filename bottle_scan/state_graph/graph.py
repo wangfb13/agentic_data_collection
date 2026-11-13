@@ -4,7 +4,7 @@ import math
 from collections import defaultdict
 import numpy as np
 from .common import digest,group_id,independent
-from .skill_interface import model_observation
+from .skill_interface import model_observation, normalize_action
 from .noise import pairwise_distances
 from .sink import estimate_sinks,sink_id
 
@@ -41,11 +41,18 @@ def observed_edges(rows,spec):
         a=lookup.get(b.get('previous_node_id'))
         if a is None or group_id(a)!=group_id(b) or not gate(a,b):continue
         if b['window_index']<=a['window_index'] or not b.get('u_receipt'):continue
+        typed=b.get('action_executed')
         u=np.asarray(b.get('u_executed'),float)
-        if u.shape!=(dim,) or not np.isfinite(u).all():continue
-        if a['phase'] not in ('B_pre','B_post') or b['phase']!='B_post':continue
-        edges.append({'source':a['node_id'],'target':b['node_id'],'kind':'observed','u':u.tolist(),'cost':step_cost(b,spec),
-                      'receipt':b['u_receipt'],'group_id':group_id(b),'before_obs':a['obs'],'after_obs':b['obs']})
+        if typed is None and (u.shape!=(dim,) or not np.isfinite(u).all()):continue
+        if not b.get('u_receipt',{}).get('applied',True):continue
+        try:
+            action=normalize_action(typed or u.tolist(),spec);executable=True
+        except ValueError:
+            # A measured overshoot remains evidence, but is not a permitted future action.
+            action=typed or {'kind':spec['task']['action_space']['id'],'u':u.tolist()};executable=False
+        u=action.get('u')
+        edges.append({'source':a['node_id'],'target':b['node_id'],'kind':'observed','u':u,'cost':step_cost(b,spec),
+                      'action':action,'executable':executable,'receipt':b['u_receipt'],'group_id':group_id(b),'before_obs':a['obs'],'after_obs':b['obs']})
     return edges
 
 
@@ -69,14 +76,15 @@ def classify_reachability(rows,edges,R,probabilities,spec):
         cid=c['id'];states={}
         for row in rows:
             ident=row['node_id'];p=probabilities[cid][ident];cost=R[cid][ident]
-            attempts=[e for e in edges if e['kind']=='observed' and ident in (e['source'],e['target'])
+            attempts=[e for e in edges if e['kind']=='observed' and ident==e['source']
                       and byid[e['target']].get('is_terminal') and byid[e['target']]['post'][cid]['evaluated']
                       and byid[e['target']]['post'][cid]['success'] is False]
-            if p['n'] and p['p_hat']>=c.get('ready_p',.8):status='ready'
-            elif cost is not None:status='recoverable'
+            if p.get('ready',False):status='ready'
+            elif cost is not None and cost>0:status='recoverable'
             elif attempts:status='unreachable'
             else:status='unsupported'
-            states[ident]={'status':status,'trial_groups':sorted({e['group_id'] for e in attempts}),'evidence':[e['edge_id'] for e in attempts]}
+            states[ident]={'status':status,'trial_groups':sorted({e['group_id'] for e in attempts}),'evidence':[e['edge_id'] for e in attempts],
+                           'meaning':'not_recovered_under_tested_actions' if status=='unreachable' else status}
         result[cid]=states
     return result
 
@@ -97,10 +105,11 @@ def build_graph(rows,noise,spec,dynamics=None):
         from .dynamics import inferred_edges
         inferred=inferred_edges(rows,dynamics,noise,spec,observed);edges.extend(inferred)
     probabilities,sinks=estimate_sinks(rows,D,spec);edges.extend(sinks)
-    for e in edges:e['edge_id']='e_'+digest([e['kind'],e['source'],e['target'],e.get('u'),e.get('post_condition')])[:20]
-    R={c['id']:reverse_costs(ids,edges,sink_id(c['id'])) for c in spec['post_conditions']}
+    for e in edges:e['edge_id']='e_'+digest([e['kind'],e['source'],e['target'],e.get('action'),e.get('u'),e.get('post_condition')])[:20]
+    action_edges=[e for e in edges if e['kind'] in ('observed','inferred','sink') and e.get('executable',True)]
+    R={c['id']:reverse_costs(ids,action_edges,sink_id(c['id'])) for c in spec['post_conditions']}
     reachability=classify_reachability(rows,edges,R,probabilities,spec)
-    result={'schema':'state_graph_v3','task_id':rows[0]['task_id'] if rows else None,'node_ids':ids,'edges':edges,'R':R,'probabilities':probabilities,'reachability':reachability,
+    result={'schema':'state_graph_v4','recovery_semantics':'action_paths_to_empirical_ready_only','similarity_is_action':False,'task_id':rows[0]['task_id'] if rows else None,'node_ids':ids,'edges':edges,'R':R,'probabilities':probabilities,'reachability':reachability,
             'noise_model_id':noise['model_id'],'spec_hash':digest(spec),'active_post_condition':spec['active_post_condition'],
             'counts':{kind:sum(e['kind']==kind for e in edges) for kind in ('observed','inferred','similar','sink')}}
     result['graph_version']=digest(result)[:24]

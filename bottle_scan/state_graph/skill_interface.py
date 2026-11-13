@@ -92,4 +92,25 @@ def repeat_key(row,spec):
     variables=spec.get('perturbation_variables',{})
     active={name:settings.get(name) for name,v in variables.items() if v.get('active',True) and v['kind']!='object_property'}
     blocks={name:row.get('attrs',{}).get(name) for name,v in variables.items() if v['kind']=='object_property'}
-    return json.dumps([row['session'],row['task_id'],active,blocks],sort_keys=True,separators=(',',':'))
+    return json.dumps([row.get('provenance',{}).get('repeat_context',row['session']),row['task_id'],active,blocks],sort_keys=True,separators=(',',':'))
+
+
+def normalize_action(action,spec):
+    """Typed executable action. A sensing action is never a zero translation."""
+    kind=spec['task']['action_space']['id']
+    value={'kind':kind,'u':list(action)} if not isinstance(action,dict) else deepcopy(action)
+    capabilities=spec.get('capabilities',{kind:{'kind':'vector','dim':spec['task']['action_space']['dim'],
+                                                'max_action':spec['safety_envelope']['max_action']}})
+    if value.get('kind') not in capabilities:raise ValueError('Undeclared action capability: '+str(value.get('kind')))
+    cap=capabilities[value['kind']]
+    if cap.get('kind','vector')=='vector':
+        u=np.asarray(value.get('u'),float);limits=np.asarray(cap.get('max_action',spec['safety_envelope']['max_action']),float)
+        if u.shape!=limits.shape or not np.isfinite(u).all() or np.any(abs(u)>limits+1e-9):raise ValueError('Action outside capability envelope')
+        value['u']=u.tolist()
+    else:
+        params=value.get('parameters',{})
+        if set(params)!=set(cap.get('parameters',{})):raise ValueError('Capability parameters differ from specification')
+        for name,bounds in cap.get('parameters',{}).items():
+            x=params[name]
+            if type(x) not in (float,int) or not np.isfinite(x) or not bounds[0]<=x<=bounds[1]:raise ValueError('Capability parameter outside envelope')
+    return value

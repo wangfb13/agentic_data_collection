@@ -7,6 +7,7 @@ CONTAINER="${BOTTLE_ROS_CONTAINER:-daimon_ros1_das}"
 COMMAND="${1:-doctor}"
 case "$COMMAND" in
   state-graph) SCRIPT_ARGS=(state_graph.py) ;;
+  state-graph-loop) SCRIPT_ARGS=(state_graph_campaign.py) ;;
   a-axis) SCRIPT_ARGS=(a_axis_task.py) ;;
   agentic) SCRIPT_ARGS=(agentic.py) ;;
   rsi) SCRIPT_ARGS=(rsi.py) ;;
@@ -43,7 +44,7 @@ if (( $# )); then shift; fi
 
 # This standard-library portal delegates real execution to the existing V4
 # scheduler. Help/review/summary never need Docker or robot imports.
-if [[ "$COMMAND" == "state-graph" || "$COMMAND" == "a-axis" || "$COMMAND" == "primary-skill-export" || "$COMMAND" == "skill-label-review" ]]; then
+if [[ "$COMMAND" == "state-graph-loop" || "$COMMAND" == "state-graph" || "$COMMAND" == "a-axis" || "$COMMAND" == "primary-skill-export" || "$COMMAND" == "skill-label-review" ]]; then
   cd "$ROOT_DIR"
   a_axis_python="$ROOT_DIR/.venv/bin/python"
   if [[ -e /.dockerenv || -e /run/.containerenv ]]; then a_axis_python="$ROOT_DIR/.venv_robot/bin/python"; fi
