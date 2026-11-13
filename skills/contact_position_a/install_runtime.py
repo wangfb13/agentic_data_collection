@@ -7,6 +7,35 @@ import shutil
 import time
 
 
+def install_probe_window_observation(root,bundle):
+    """Use completed PROBE evidence for graph windows; retain live safety/contact."""
+    root=Path(root).resolve();bundle=Path(bundle).resolve()
+    target=bundle/'runtime/bottle_scan/contact_recovery_backend.py'
+    source=target.read_text()
+    marker='        # Graph features and force stability refer to the same completed PROBE.'
+    if marker in source:return {'changed':False,'path':str(target)}
+    old='''        stable = bool(p.get("valid") and status == "contact" and bilateral
+                      and abs(float(np.mean(sample["normal"])) -
+                              force["target"] * force["probe_fraction"]) <= force["probe_tolerance"]
+                      and self.policy._completed_stable_probe(p))'''
+    new='''        # Graph features and force stability refer to the same completed PROBE.
+        # _sample() still checks live force/freshness; bilateral above is live.
+        # A later force tick must not relabel the already recorded window.
+        normal = np.asarray(p.get("normal_sdk", [np.nan, np.nan])
+                            if self.config.get("state_graph_execution") else sample["normal"], dtype=float)
+        stable = bool(p.get("valid") and status == "contact" and bilateral
+                      and normal.shape == (2,) and np.isfinite(normal).all()
+                      and np.all(normal >= self.hw.zero["contact_thresholds_sdk"])
+                      and abs(float(np.mean(normal)) -
+                              force["target"] * force["probe_fraction"]) <= force["probe_tolerance"]
+                      and self.policy._completed_stable_probe(p))'''
+    if source.count(old)!=1:raise ValueError('Unexpected recovery observation implementation')
+    updated=source.replace(old,new);ast.parse(updated)
+    backup=root/'outputs/state_graph/v4_install_backups'/str(time.time_ns());backup.mkdir(parents=True)
+    shutil.copy2(target,backup/target.name);target.write_text(updated)
+    return {'changed':True,'path':str(target),'backup':str(backup/target.name)}
+
+
 def install(root,bundle):
     root=Path(root).resolve();bundle=Path(bundle).resolve()
     target=bundle/'runtime/bottle_scan/contact_scheduler.py';text=target.read_text()
@@ -65,11 +94,12 @@ def install(root,bundle):
         if before!=after:
             ast.parse(after);backup=root/'outputs/state_graph/v4_install_backups'/str(time.time_ns());backup.mkdir(parents=True)
             shutil.copy2(file,backup/file.name);file.write_text(after)
+    probe_fix=install_probe_window_observation(root,bundle)
     config=json.loads((bundle/'contact_scheduler.state_graph_v3_0330.json').read_text())
     config['state_graph_recording']={'enabled':True,'adapter_path':str(root/'skills/contact_position_a/scheduler.py'),'wrist_camera_key':'right_wrist'}
     config['single_correction_open_handoff']=False
     destination=root/'config.state_graph.v4_scheduler.json';destination.write_text(json.dumps(config,ensure_ascii=False,indent=2)+'\n')
-    return {'hook':str(target),'base_config':str(destination),'robot_started':False}
+    return {'hook':str(target),'base_config':str(destination),'probe_observation':probe_fix,'robot_started':False}
 
 
 def main():

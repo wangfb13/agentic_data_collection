@@ -66,6 +66,15 @@ def capture_window(backend,probe,sample,folder,index,previous=None,receipt=None,
 
 def lifecycle_event(event,window,consumer):
     if not window:return None
+    if event.get('event')=='handoff_contact_lost_timeout' and event.get('phase')=='forcepolicy':
+        # The consumer has taken ownership and failed to retain contact.
+        # A loss while the preceding PROBE owns the gripper is not its outcome.
+        evidence={k:event[k] for k in ('event','phase','timestamp_ns','lost_s','normal_sdk',
+                                      'thresholds_sdk','width_normalized') if k in event}
+        evidence['meaning']='Contact was lost after ForcePolicy took ownership, before L1 readiness; lift was not attempted.'
+        return {'schema':'contact_graph_outcome_v3','event':'state_graph_consumer_result','node_id':window['node_id'],
+                'group_id':window['group_id'],'is_terminal':True,'consumer_outcome':{**consumer,'L1':False,'L2':None,'L3':None,
+                'evidence':[evidence]},'recorded_unix_ns':time.time_ns()}
     if event.get('event')=='fault' and event.get('reason','').startswith('ForcePolicy did not stabilize during handoff'):
         return {'schema':'contact_graph_outcome_v3','event':'state_graph_consumer_result','node_id':window['node_id'],
                 'group_id':window['group_id'],'is_terminal':True,'consumer_outcome':{**consumer,'L1':False,'L2':None,'L3':None,

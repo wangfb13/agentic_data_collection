@@ -10,7 +10,9 @@ def iter_trials(sources,spec):
     for source in sources:
         path=Path(source)
         rows=json.loads(path.read_text()) if path.suffix=='.json' else [json.loads(line) for line in path.read_text().splitlines() if line]
-        if any(r.get('event')=='state_graph_window' for r in rows):
+        # A scheduler episode can terminate before its first valid graph window.
+        # It is still an event log, not historical rows with session/trial keys.
+        if path.name=='events.jsonl' or any(r.get('event') in ('state_graph_window','graph_runtime_selected') for r in rows):
             from .scheduler import trials_from_events
             yield from trials_from_events(rows,spec);continue
         for row in rows:groups[(row['session'],row['trial_id'])].append(row)

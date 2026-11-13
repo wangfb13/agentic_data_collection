@@ -8,6 +8,7 @@ import bottle_scan
 bottle_scan.__path__.append(str(REPO/'bottle_scan'))
 sys.path.append(str(REPO))
 import unittest
+import numpy as np
 from unittest.mock import patch
 from types import SimpleNamespace
 from tests.test_contact_recovery_backend import RecoveryBackendTests,Runner
@@ -17,6 +18,36 @@ from bottle_scan.state_graph.skill_interface import load_spec
 
 
 class GraphBackendSmoke(unittest.TestCase):
+    def test_probe_window_survives_later_force_tick_but_not_live_contact_loss(self):
+        fixture=RecoveryBackendTests();fixture.setUp()
+        try:
+            backend=fixture.backend
+            runner=Runner(backend,Path(fixture.temp.name))
+            probe=runner.regulate()
+            probe['normal_sdk']=[.8609203924735387,1.7371947954098383]
+            sample=backend.hw.snapshot()
+            # Actual failure: left finger updates after the certified window,
+            # before the next right-finger frame reaches the observer.
+            sample['normal']=np.array([1.9892195095618566,1.7371947954098383])
+            backend.hw.snapshot=lambda:sample
+            self.assertFalse(backend._observation('contact',probe)['force_stable']) # legacy unchanged
+            backend.config['state_graph_execution']={'request':'test'}
+            self.assertTrue(backend._observation('contact',probe)['force_stable'])
+            self.assertFalse(backend._observation('contact',probe)['force_stable']) # no cached reuse
+            backend._last_window_end=None;backend._last_window_ids=None
+            sample['normal']=np.array([0.,1.7])
+            lost=backend._observation('contact',probe)
+            self.assertFalse(lost['bilateral']);self.assertFalse(lost['force_stable'])
+            sample['normal']=np.array([backend.cfg['force']['max']+1.,1.7])
+            with self.assertRaisesRegex(RuntimeError,'Force is invalid or exceeds'):
+                backend._observation('contact',probe)
+            sample['normal']=np.array([1.5,1.5])
+            for recorded in ([0.,3.],[2.,2.],None):
+                if recorded is None:probe.pop('normal_sdk',None)
+                else:probe['normal_sdk']=recorded
+                self.assertFalse(backend._observation('contact',probe)['force_stable'])
+        finally:fixture.doCleanups()
+
     def test_graph_prelude_accepts_small_probes_only_under_explicit_graph_config(self):
         import os
         from bottle_scan.contact_scheduler import experiment_b_offset_from_environment

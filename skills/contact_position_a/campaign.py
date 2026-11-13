@@ -100,7 +100,7 @@ def recover_trial(request,directory,spec,cfg,*,interactive=True):
                     'task_success':(outcome or {}).get('L3'),'evidence':[str(events_path),str(review_file)]}
     proc=json.loads(process.read_text())
     applied=[r for r in rows if (r.get('u_receipt') or {}).get('applied')]
-    return {'trial_id':request['trial_id'],'status':'complete' if terminal else 'failed','nodes':rows,'assessment':assessment,
+    return {'trial_id':request['trial_id'],'status':'complete' if terminal and proc['returncode']==0 else 'failed','nodes':rows,'assessment':assessment,
             'cost':{'actions':len(applied),'wall_seconds':proc['wall_seconds']},'evidence':[str(events_path)],
             'unassessed_reason':None if terminal else 'No actual consumer endpoint; hardware/policy failures are not invented consumer labels.'}
 
