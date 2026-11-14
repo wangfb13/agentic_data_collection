@@ -2,10 +2,12 @@
 from copy import deepcopy
 import json
 import os
+import re
+import sys
 from pathlib import Path
 import subprocess
 import time
-from bottle_scan.state_graph.campaign import atomic
+from bottle_scan.state_graph.campaign import RetryTrial, atomic
 from bottle_scan.state_graph.extract_nodes import extract_nodes
 from bottle_scan.state_graph.skill_interface import normalize_action
 from .scheduler import append_reviewed_outcome
@@ -37,38 +39,86 @@ def launch_request(request,directory,spec,cfg):
     return ['bash',execution['entry'],'skill-run'],env
 
 
+def technical_error(message):
+    text = str(message).strip()
+    lower = text.lower()
+    sensor_faults = ('raw finger wrench time skew', 'x5 startup missing/stale streams',
+                     'guarded software zero lacks', '扣零需要已全开', '扣零期间夹爪开度改变')
+    camera_timeout = 'camera' in lower and 'timed out waiting for a new frame' in lower
+    python_error = re.match(r'^(ImportError|ModuleNotFoundError|TypeError|KeyError|AttributeError|NameError):', text)
+    if camera_timeout or python_error or any(s in lower for s in sensor_faults):
+        return text[:600]
+    return None
+
+
+def run_with_diagnostics(command, env):
+    # Preserve interactive stdin/stdout, forward stderr and retain the fault
+    # category in the terminal process receipt for offline recovery.
+    try:
+        child = subprocess.Popen(command, env=env, stderr=subprocess.PIPE,
+                                 text=True, errors='replace')
+    except OSError as exc:
+        return 127, str(exc)
+    reason = None
+    with child:
+        for line in child.stderr:
+            sys.stderr.write(line)
+            sys.stderr.flush()
+            reason = technical_error(line) or reason
+        return child.wait(), reason
+
+
 def execute_trial(request,directory,spec,cfg,*,real=False,interactive=True):
     if not real:raise ValueError('Real collection requires --real')
     directory=Path(directory)
     command,env=launch_request(request,directory,spec,cfg)
     if not interactive:raise ValueError('This instance needs on-site reset and real L2 outcome review; use interactive execution')
     print('\n[graph-loop] '+request['trial_id']+' '+request['role']+' '+json.dumps({'settings':request['settings'],'block':request['block'],'actions':request['actions']},ensure_ascii=False),flush=True)
+    mass = request['block'].get('mass_class')
+    bottle = {'light': '轻瓶', 'heavy': '重瓶'}.get(mass, '本次指定的瓶子')
+    print(f"本次请放【{bottle}】，a 偏移 {request['settings'].get('a_offset_mm', 0):+g} mm。", flush=True)
     print('将本次瓶子放稳在原标记；机械臂停止、右夹爪全开空载，恢复到本配置 T0 或允许的退让位。停止遥操。',flush=True)
-    if input('确认后输入 MOVE 执行这一次；其他输入保留待执行记录：').strip()!='MOVE':return None
+    if input('确认后输入 MOVE 执行这一次；其他输入保留待执行记录：').strip()!='MOVE':
+        raise RetryTrial('未输入 MOVE，本次未启动。')
     env['CONTACT_TABLETOP_CONFIRMED']='1'
     atomic(directory/'launch.json',{'command':command,'started_ns':time.time_ns(),'request':request,'model_id':request['model_id']})
     started=time.monotonic()
     # Existing V4 entry forwards the CONTACT_* / RIGHT_* namespace into Docker.
-    rc=subprocess.run(command,env=env,check=False).returncode
-    atomic(directory/'process.json',{'returncode':rc,'wall_seconds':time.monotonic()-started,'finished_ns':time.time_ns()})
+    rc, reason = run_with_diagnostics(command, env)
+    atomic(directory/'process.json',{'returncode':rc,'technical_error':reason,'wall_seconds':time.monotonic()-started,'finished_ns':time.time_ns()})
     return recover_trial(request,directory,spec,cfg,interactive=interactive)
 
 
 def recover_trial(request,directory,spec,cfg,*,interactive=True):
     directory=Path(directory);process=directory/'process.json'
     events_paths=sorted(directory.glob('episodes/episode_*/events.jsonl'))
-    if not events_paths:return None
+    proc = json.loads(process.read_text()) if process.exists() else None
+    if not events_paths:
+        if not (directory/'launch.json').exists() and all(p.name in ('request.json', 'scheduler_config.json') for p in directory.iterdir()):
+            raise RetryTrial('尚未确认启动。')
+        episodes = directory/'episodes'
+        episode_started = episodes.exists() and any(episodes.iterdir())
+        if proc and proc['returncode'] != 0 and (directory/'launch.json').exists() and not episode_started:
+            raise RetryTrial(proc.get('technical_error') or f"子进程在建立 episode 前退出（返回码 {proc['returncode']}）。")
+        return None
     if len(events_paths)!=1:raise ValueError('Expected one episode per campaign trial; review duplicate launches')
     events_path=events_paths[0]
     events=[json.loads(line) for line in events_path.read_text().splitlines() if line.strip()]
-    selected=[e for e in events if e.get('event')=='graph_runtime_selected']
-    if not selected or selected[-1]['request']['trial_id']!=request['trial_id']:raise ValueError('Episode did not load the requested graph adapter')
-    if selected[-1]['model_id']!=(request['model_id'] or 'planned_exploration'):raise ValueError('Episode used a different model')
-    outcomes=[e for e in events if e.get('event')=='state_graph_consumer_result']
-    if not process.exists():
-        # No terminal process receipt: a still-running session must not be reviewed.
+    if proc is None:
         return None
-    outcome=outcomes[-1]['consumer_outcome'] if outcomes else None
+    selected=[e for e in events if e.get('event')=='graph_runtime_selected']
+    outcomes=[e['consumer_outcome'] for e in events if e.get('event')=='state_graph_consumer_result']
+    outcome=outcomes[-1] if outcomes else None
+    if selected and (selected[-1]['request']['trial_id'] != request['trial_id'] or
+                     selected[-1]['model_id'] != (request['model_id'] or 'planned_exploration')):
+        raise ValueError('Episode did not load the requested graph trial and model')
+    terminal_observed = any(o.get('L1') is False or type(o.get('L2')) is bool for o in outcomes)
+    faults = [str(e.get('reason') or '') for e in events if e.get('event') in ('fault', 'episode_end')]
+    reason = next((r for f in faults if (r := technical_error(f))), None) or proc.get('technical_error')
+    if reason and not terminal_observed and (proc['returncode'] != 0 or any(technical_error(f) for f in faults)):
+        raise RetryTrial(reason)
+    if not selected:
+        raise ValueError('Episode did not load the requested graph adapter')
     if outcome and outcome.get('L1') is True and type(outcome.get('L2')) is not bool:
         if not interactive:return None
         print('复核实际结果：ForcePolicy 接手后，瓶子是否提起并保持、不滑落？不能用“两指接触”替代。')
@@ -98,7 +148,6 @@ def recover_trial(request,directory,spec,cfg,*,interactive=True):
                     'target_truth':terminal['post'][request['post_condition']]['success'] if evaluated else None,
                     'invoked':invoked,'exit_declared':exit_declared,'rejected':not exit_declared,
                     'task_success':(outcome or {}).get('L3'),'evidence':[str(events_path),str(review_file)]}
-    proc=json.loads(process.read_text())
     applied=[r for r in rows if (r.get('u_receipt') or {}).get('applied')]
     return {'trial_id':request['trial_id'],'status':'complete' if terminal and proc['returncode']==0 else 'failed','nodes':rows,'assessment':assessment,
             'cost':{'actions':len(applied),'wall_seconds':proc['wall_seconds']},'evidence':[str(events_path)],

@@ -132,6 +132,37 @@ def accept_result(out,state,trial,spec):
     atomic(Path(out)/'state.json',state)
 
 
+class RetryTrial(Exception):
+    """The attempt ended without a usable outcome. Repeat this plan cell."""
+
+
+def retry_archive(out, trial):
+    return Path(out)/'incomplete_attempts'/trial['trial_id']/str(trial['started_ns'])
+
+
+def requeue_attempt(out, state, trial, reason):
+    directory = Path(trial['directory'])
+    archive = retry_archive(out, trial)
+    # Keeping the receipt with the original directory makes an interrupted move
+    # recoverable even if the process dies before the state file is committed.
+    if not (archive/'retry.json').exists():
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        atomic(directory/'retry.json', {'trial_id': trial['trial_id'], 'reason': reason})
+        directory.rename(archive)
+    receipt = read(archive/'retry.json')
+    if receipt['trial_id'] != trial['trial_id']:
+        raise ValueError('Retry receipt belongs to another trial')
+    atomic(directory/'request.json', trial['request'])
+    trial.setdefault('incomplete_attempts', []).append({**receipt, 'archive': str(archive)})
+    trial['status'] = 'queued'
+    trial.pop('started_ns')
+    trial.pop('error', None)
+    state['spent']['trials'] -= 1
+    state['phase'] = 'ready_to_collect'
+    atomic(Path(out)/'state.json', state)
+    print(f"[graph-loop] {trial['trial_id']} 本次未计数，保留同一试次。{receipt['reason']}", flush=True)
+
+
 def collect_pending(out,state,spec,cfg,*,real=False,executor=None,interactive=True):
     pending=state['pending'];ids=set(pending['trial_ids'])
     fn=executor
@@ -140,13 +171,20 @@ def collect_pending(out,state,spec,cfg,*,real=False,executor=None,interactive=Tr
         directory=Path(trial['directory']);result_path=directory/'result.json'
         if result_path.exists():accept_result(out,state,trial,spec);continue
         if trial['status']=='started':
-            # Process may have completed motion before crashing. Recover evidence,
-            # never replay the same hardware request automatically.
-            recover_name=spec['adapters'].get('campaign_recover')
-            result=load_callable(recover_name)(trial['request'],directory,spec,cfg,interactive=interactive) if recover_name else None
-            if result:
-                atomic(result_path,result);accept_result(out,state,trial,spec);continue
-            state['phase']='awaiting_result';atomic(Path(out)/'state.json',state);return
+            archive = retry_archive(out, trial)
+            receipt = next((p for p in (archive/'retry.json', directory/'retry.json') if p.exists()), None)
+            if receipt:
+                requeue_attempt(out, state, trial, read(receipt)['reason'])
+            else:
+                recover_name=spec['adapters'].get('campaign_recover')
+                try:
+                    result=load_callable(recover_name)(trial['request'],directory,spec,cfg,interactive=interactive) if recover_name else None
+                except RetryTrial as exc:
+                    requeue_attempt(out, state, trial, str(exc))
+                else:
+                    if result:
+                        atomic(result_path,result);accept_result(out,state,trial,spec);continue
+                    state['phase']='awaiting_result';atomic(Path(out)/'state.json',state);return
         if not real and executor is None:
             state['phase']='ready_to_collect';atomic(Path(out)/'state.json',state);return
         trial['status']='started';trial['started_ns']=time.time_ns();state['spent']['trials']+=1
@@ -154,6 +192,9 @@ def collect_pending(out,state,spec,cfg,*,real=False,executor=None,interactive=Tr
         try:
             if fn is None:fn=load_callable(spec['adapters']['campaign_executor'])
             result=fn(trial['request'],directory,spec,cfg,real=real,interactive=interactive)
+        except RetryTrial as exc:
+            requeue_attempt(out, state, trial, str(exc))
+            return
         except BaseException as exc:
             trial['error']=str(exc);state['phase']='awaiting_result';atomic(Path(out)/'state.json',state);raise
         if result is None:
@@ -296,7 +337,12 @@ def main(argv=None):
                 result={'trial_id':trial['trial_id'],'status':'failed','nodes':[],'assessment':({'evaluated':False,'rejected':True,'exit_declared':False,'evidence':[args.evidence]} if trial['request']['role']!='exploration' else None),'cost':{'actions':0,'actions_unknown':True,'wall_seconds':(time.time_ns()-trial['started_ns'])/1e9},'evidence':args.evidence}
                 atomic(Path(trial['directory'])/'result.json',result)
             else:
-                result=load_callable(spec['adapters']['campaign_recover'])(trial['request'],Path(trial['directory']),spec,cfg,interactive=True)
+                try:
+                    result=load_callable(spec['adapters']['campaign_recover'])(trial['request'],Path(trial['directory']),spec,cfg,interactive=True)
+                except RetryTrial as exc:
+                    requeue_attempt(out, state, trial, str(exc))
+                    print(json.dumps({'phase': state['phase'], 'spent': state['spent']}, ensure_ascii=False))
+                    return 0
                 if result is None:raise ValueError('No completed evidence available; do not replay this trial')
                 atomic(Path(trial['directory'])/'result.json',result)
             accept_result(out,state,trial,spec)

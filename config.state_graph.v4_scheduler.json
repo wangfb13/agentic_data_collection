@@ -135,7 +135,7 @@
     }
   },
   "support_height_tolerance_mm": 2.0,
-  "support_lateral_tolerance_mm": 2.0,
+  "support_lateral_tolerance_mm": 5.0,
   "support_angle_tolerance_deg": 1.0,
   "max_skill_s": 90.0,
   "max_regrasps": 3,

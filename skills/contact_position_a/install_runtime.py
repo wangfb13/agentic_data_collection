@@ -98,6 +98,7 @@ def install(root,bundle):
     config=json.loads((bundle/'contact_scheduler.state_graph_v3_0330.json').read_text())
     config['state_graph_recording']={'enabled':True,'adapter_path':str(root/'skills/contact_position_a/scheduler.py'),'wrist_camera_key':'right_wrist'}
     config['single_correction_open_handoff']=False
+    config['support_lateral_tolerance_mm'] = 5.0
     destination=root/'config.state_graph.v4_scheduler.json';destination.write_text(json.dumps(config,ensure_ascii=False,indent=2)+'\n')
     return {'hook':str(target),'base_config':str(destination),'probe_observation':probe_fix,'robot_started':False}
 
