@@ -51,9 +51,17 @@ def applicable_operators(facts,spec,rule,state=None):
     for f in find('inferred_edge_unverified'):
         if f['args'][-1]==active and f['metrics']['path_fraction']>.5:
             add('verify_edges',[f],source_node_id=f['metrics']['source_node_id'],edge_id=f['metrics']['edge_id'])
+    gaps = [f for f in find('development_class_missing') if f['args'] == [active]]
+    for f in gaps:
+        add('collect_outcomes', [f], post_condition=active)
+        add('collect_transitions', [f], post_condition=active)
+    # Mixed or unknown regions can still yield both classes in a prospective B.
+    # A model calling every observed region Ready cannot exercise its correction.
+    uniform = any(f['metrics'].get('observed_classes') in (['Ready'], ['NeedAction']) for f in gaps)
     coverage={f['args'][0]:f for f in find('coverage_ok')}
-    if all(h in coverage for h in ('V','pi','f')):add('train',[coverage[h] for h in ('V','pi','f')])
-    for f in find('model_executable'):add('validate_B',[f],post_condition=active,required_symbols=['Ready','NeedAction'])
+    if not uniform and all(h in coverage for h in ('V','pi','f')):add('train',[coverage[h] for h in ('V','pi','f')])
+    if not uniform:
+        for f in find('model_executable'):add('validate_B',[f],post_condition=active,required_symbols=['Ready','NeedAction'])
     for f in find('dev_B_pass'):add('freeze',[f])
     for f in find('label_conflict'):add('review_labels',[f])
     add('pause');return out

@@ -73,3 +73,39 @@ def test_consumer_failure_keeps_valid_negative_node_and_failed_process(tmp_path,
     result=recover_trial(request,tmp_path,spec,{},interactive=False)
     assert result['status']=='failed' and result['nodes']==[node]
     assert result['assessment'] is None and result['unassessed_reason'] is None
+
+
+def test_incomplete_reprobe_preserves_only_first_window_and_actual_motion(tmp_path):
+    from skills.contact_position_a.ready import select
+    from skills.contact_position_a.runtime import GraphRecoveryProxy
+    spec = load_spec(ROOT/'skills/contact_position_a/spec.campaign_v4.json')
+    select(spec, 'fixed5', device_min=.3)
+    goal = spec['active_post_condition']
+    request = {'mode':'planned', 'model_id':'m', 'trial_id':'test', 'role':'exploration', 'post_condition':goal}
+    proxy = GraphRecoveryProxy(None, request, spec)
+    proxy.window = {'node_id':'first'}
+    receipt = {'applied':True, 'action_mm':-4.48, 'completed_ns':12}
+    decision = proxy.advance({'bilateral':False}, applied_action=receipt)
+    assert proxy.window is None and decision['exit']['reason']=='incomplete_contact_window'
+    features = {'obs':{k:[1.] for k in spec['observation']['modalities']},
+                'extractor_versions':{k:v['version'] for k,v in spec['observation']['modalities'].items()}}
+    window = {'event':'state_graph_window','session':'s','group_id':'g','trial_id':'i','node_id':'i:0',
+              'window_index':0,'phase':'B_pre','t_ns':8,'probe':{},'wrench':[],'attrs':{},
+              'preconditions':{'bilateral_contact':True},'raw_evidence':{'wrist':{}},
+              'live_features':features,'live_contacts':[],'visual_features':[]}
+    events = [{'event':'graph_runtime_selected','model_id':'m','request':request},window,dict(window),
+              {'event':'contact_incomplete','corrections':[{'receipt':receipt}],'reason':'incomplete_contact_window'}]
+    folder = tmp_path/'episodes'/'episode_1'
+    folder.mkdir(parents=True)
+    log = folder/'events.jsonl'
+    log.write_text(''.join(json.dumps(e)+'\n' for e in events))
+    (tmp_path/'process.json').write_text(json.dumps({'returncode':0,'wall_seconds':9}))
+    result = recover_trial(request,tmp_path,spec,{},interactive=False)
+    assert result['cost']['actions']==1 and result['measured_actions']==[[-4.48]]
+    assert result['status']=='failed' and result['attempt_reason']=='incomplete_contact_window'
+    node, = result['nodes']
+    assert node['node_id']=='i:0' and node['u_executed'] is None and not node['post'][goal]['evaluated']
+    events[2]['t_ns']+=1
+    log.write_text(''.join(json.dumps(e)+'\n' for e in events))
+    with pytest.raises(ValueError,match='Conflicting state_graph_window'):
+        extract_nodes([str(log)],spec)

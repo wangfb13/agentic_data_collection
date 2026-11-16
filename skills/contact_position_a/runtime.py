@@ -16,6 +16,7 @@ from bottle_scan.state_graph.skill import SymbolicRecoverySkill
 from bottle_scan.state_graph.skill_interface import load_spec, load_callable, model_observation, normalize_action, task_id
 from bottle_scan.state_graph.extract_nodes import extract_nodes
 from .scheduler import capture_window, consumer_identity
+from .ready import FIXED_GOALS, check_fixed_config, fixed_squeeze_lift
 
 
 def live_window(backend,probe,observation,folder,index,previous,receipt,spec):
@@ -74,13 +75,15 @@ class GraphRecoveryProxy:
                 'recovery':{'action':action,'decision':{'reason':reason,'prediction':prediction}},
                 'exit':{'completed':ready,'status':'success' if ready else 'running' if invoke else 'incomplete',
                         'hand_back':not invoke,'reason':reason,'target_observed':ready,
-                        'next_owner':'forcepolicy' if ready else None},
+                        'next_owner':('fixed_squeeze' if self.spec['active_post_condition'] in FIXED_GOALS else 'forcepolicy') if ready else None},
                 'graph_model_id':self.model_id,'mode':self.mode}
         self.last=result;self.events.append(deepcopy(result));return result
 
     def start(self,observation):return self.advance(observation)
 
     def advance(self,observation,applied_action=None):
+        # Only a valid observation from this step may be emitted as its window.
+        self.window = None
         if not observation.get('bilateral') or not observation.get('force_stable'):return self.abort('incomplete_contact_window')
         folders=list(self.backend.output_dir.glob('invocation_*'))
         folder=max(folders,key=lambda p:p.stat().st_mtime_ns)
@@ -112,7 +115,17 @@ class GraphRecoveryProxy:
 
 def install_backend(backend,settings):
     request=json.loads(Path(settings['request']).read_text());spec=load_spec(request['spec'])
-    backend._graph_consumer=consumer_identity()
+    if request['post_condition']!=spec['active_post_condition']:
+        raise ValueError('Request and graph bundle use different Ready goals')
+    goal = spec['active_post_condition']
+    if goal in FIXED_GOALS:
+        consumer = check_fixed_config(backend.cfg, goal)
+        if backend.skill_after!='stop' or not getattr(backend,'supports_graph_fixed_lift',False):
+            raise ValueError('Fixed squeeze requires the installed V4 fixed-lift hook and stop mode')
+        backend._graph_consumer=consumer
+        backend.graph_fixed_lift=lambda runner,target: fixed_squeeze_lift(backend,runner,target,goal)
+    else:
+        backend._graph_consumer=consumer_identity()
     condition=next(c for c in spec['post_conditions'] if c['id']==spec['active_post_condition'])
     expected=condition['consumer']
     if expected.get('version') and expected['version']!=backend._graph_consumer['version']:raise ValueError('Different ForcePolicy consumer checkpoint')

@@ -101,8 +101,17 @@ def append_reviewed_outcome(events_path,*,L2,L3=None,evidence):
 
 def trials_from_events(events,spec):
     groups=defaultdict(list);outcomes={};handoffs=set()
+    windows_by_id = {}
     for e in events:
-        if e.get('event')=='state_graph_window':groups[e['group_id']].append(e)
+        if e.get('event')=='state_graph_window':
+            # Some older aborts logged the same cached observation twice.
+            node = e['node_id']
+            if node in windows_by_id:
+                if windows_by_id[node] != e:
+                    raise ValueError(f'Conflicting state_graph_window records for node {node}')
+                continue
+            windows_by_id[node] = e
+            groups[e['group_id']].append(e)
         elif e.get('event')=='state_graph_consumer_result':outcomes[e['node_id']]=e['consumer_outcome'];handoffs.add(e['node_id'])
         elif e.get('event')=='state_graph_handoff':handoffs.add(e['node_id'])
     vision=None
@@ -144,6 +153,9 @@ def trials_from_events(events,spec):
                 if vision is None:vision=FrozenVision('cpu',spec['data']['visual_model_directory'])
                 zvis=vision.encode(read_wrist({'path':image['path']}))
             row={k:e.get(k) for k in ('node_id','session','trial_id','group_id','window_index','phase','t_ns','u_executed','u_receipt','previous_node_id','plan_coords','attrs','preconditions')}
+            rule_id = (e.get('campaign_request') or {}).get('rule_id')
+            if rule_id:
+                row['rule_id'] = rule_id
             row.update(recorded_features=e.get('live_features'),is_terminal=e['node_id'] in handoffs,consumer_outcome=outcomes.get(e['node_id']),contacts=contacts,wrench=wrench,visual=zvis,tactile_frames=encoded_references,
                 repeat_settings={'a_offset_mm':e['attrs'].get('planned_a_offset_mm'),'closure_floor':e['attrs'].get('closure_floor'),'approach_pose':e['attrs'].get('approach_pose')},
                 is_reference=e['attrs'].get('planned_a_offset_mm')==0,

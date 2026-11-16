@@ -114,4 +114,12 @@ def generate_facts(graph,rows,labels,clusters,noise,spec,models=None):
             if model.get('status')=='trained':facts.append(fact('coverage_ok',[name],model.get('fit_node_ids',[]),{'n':model.get('n'),'post_condition':active}))
         if all(ms[k].get('status')=='trained' for k in ('V','pi')):
             facts.append(fact('model_executable',[active],ms['V']['fit_node_ids'],{'independent_effectiveness_proven':False}))
+            if spec.get('acceptance', {}).get('requires_ready_and_need_action_coverage'):
+                regions = clusters['clusters']
+                present = {c['symbols'][active].split('(', 1)[0] for c in regions}
+                missing = {'Ready', 'NeedAction'} - present
+                if missing:
+                    facts.append(fact('development_class_missing', [active],
+                                      [i for c in regions for i in c['node_ids']],
+                                      {'observed_classes': sorted(present), 'missing_classes': sorted(missing)}))
     return facts

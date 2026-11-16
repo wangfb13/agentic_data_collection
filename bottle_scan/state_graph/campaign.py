@@ -85,7 +85,34 @@ def expand_plan(plan,spec):
     return trials
 
 
-def queue_plan(out,state,spec,plan,role):
+def source_initial_settings(plan, spec, rows):
+    """A cell referencing an initial window inherits its recorded trial settings."""
+    sources = {row['node_id']:row for row in rows}
+    plan = deepcopy(plan)
+    for cell in plan['cells']:
+        ident = cell.get('source_node_id')
+        if not ident:
+            continue
+        source = sources[ident]
+        if source.get('previous_node_id'):
+            continue  # The original start settings do not reproduce a later window.
+        settings = cell.setdefault('settings', {})
+        for key, value in source.get('repeat_settings', {}).items():
+            variable = spec['perturbation_variables'].get(key)
+            if not variable or variable['kind'] == 'object_property' or value is None:
+                continue
+            if variable['kind'] == 'continuous':
+                if not isinstance(value,(int,float)) or not variable['envelope'][0] <= value <= variable['envelope'][1]:
+                    continue
+            elif value not in variable.get('levels', []):
+                continue
+            settings.setdefault(key, value)
+    return plan
+
+
+def queue_plan(out,state,spec,plan,role,*,source_review=None):
+    if any(c.get('source_node_id') for c in plan['cells']):
+        plan=source_initial_settings(plan,spec,all_rows(out,state))
     items=expand_plan(plan,spec)
     if state['spent']['trials']+len(items)>spec['budget']['max_new_trials']:raise ValueError('Trial budget exhausted')
     model=state['frozen'] if role=='independent' else state.get('model')
@@ -102,6 +129,8 @@ def queue_plan(out,state,spec,plan,role):
         record={'trial_id':trial_id,'directory':directory,'status':'queued','request':request}
         atomic(Path(directory)/'request.json',request);state['trials'].append(record);queued.append(trial_id)
     state['pending']={'batch_id':batch_id,'trial_ids':queued,'role':role,'plan':plan}
+    if source_review is not None:
+        state['pending']['source_review']=source_review
     state['phase']='collect';atomic(Path(out)/'state.json',state)
 
 
@@ -203,6 +232,47 @@ def collect_pending(out,state,spec,cfg,*,real=False,executor=None,interactive=Tr
     state['last_batch']=state['pending'];state['pending']=None;state['phase']='analyze';atomic(Path(out)/'state.json',state)
 
 
+def source_comparison(out, batch, trials, rows, condition):
+    """Review the two arms against the graph that selected the source."""
+    from .noise import pairwise_distances
+    from .common import group_id
+    reference = batch['source_review']
+    noise = read(Path(out)/'revisions'/f"{reference['revision']:04d}"/'noise_model.json')
+    by_id = {row['node_id']: row for row in rows}
+    source = by_id[reference['source_node_id']]
+    prior = [by_id[ident] for ident in noise['fit_node_ids']]
+    prior_success = [r for r in prior if r.get('is_terminal') and
+                     r['post'][condition].get('evaluated') and r['post'][condition].get('success') is True]
+    arms = []
+    for trial in trials:
+        if trial['trial_id'] not in batch['trial_ids']:
+            continue
+        result = read(Path(trial['directory'])/'result.json')
+        nodes = result['nodes']
+        first = next((r for r in nodes if r.get('window_index') == 0 and r.get('window_valid')), None)
+        terminal = next((r for r in reversed(nodes) if r.get('is_terminal') and
+                         r['post'][condition].get('evaluated')), None)
+        arm = {'trial_id': trial['trial_id'], 'block': trial['request']['block'],
+               'settings': trial['request']['settings'], 'requested_actions': trial['request']['actions'],
+               'measured_actions': result.get('measured_actions', [r.get('u_executed') for r in nodes if (r.get('u_receipt') or {}).get('applied')]),
+               'attempt_reason': result.get('attempt_reason'),
+               'initial_node': first['node_id'] if first else None,
+               'actual_initial_coords': first.get('plan_coords') if first else None,
+               'distance_to_source': None, 'source_matched': None, 'prior_success_groups_nearby': None,
+               'consumer_success': terminal['post'][condition]['success'] if terminal else None,
+               'consumer_level': terminal['post'][condition].get('level') if terminal else None}
+        if first:
+            distances = pairwise_distances([first, source, *prior_success], noise)[0]
+            arm.update(distance_to_source=float(distances[1]), source_matched=bool(distances[1] <= 1),
+                       prior_success_groups_nearby=len({group_id(r) for r,d in zip(prior_success, distances[2:]) if d<=1}))
+        arms.append(arm)
+    return {'batch_id': batch['batch_id'], **reference, 'post_condition': condition, 'arms': arms,
+            'interpretation': 'Judge reproducibility from first contact before any correction using this pre-batch metric. '
+             'A source match that also matches historical success is ambiguous for reproducing the isolated state. '
+             'Compare actual movements and measured endpoints across comparable starts. Missing evidence is unknown. '
+             'Use the actual number of comparable trials in each arm. Decide whether further collection is justified and explain why.'}
+
+
 def next_decision(out,state,spec,cfg,allow_agent,provider=None):
     out=Path(out);rows=[r for r in all_rows(out,state) if not independent(r)]
     previous=read(state['model']['clusters']) if state.get('model') and Path(state['model']['clusters']).exists() else None
@@ -259,6 +329,11 @@ def next_decision(out,state,spec,cfg,allow_agent,provider=None):
     ctx['collection_regions']=[{'region':c['cluster_id'],'anchor':c.get('region_anchor'),'symbols':c['symbols'],
         'examples':[{'node_id':r['node_id'],'settings':r.get('repeat_settings',{}),'blocks':{v:r['attrs'].get(v) for v,d in spec['perturbation_variables'].items() if d['kind']=='object_property'}}
         for r in rows if r['node_id'] in c['node_ids']][:2]} for c in (previous or {}).get('clusters',[])]
+    last_batch = state.get('last_batch') or {}
+    if last_batch.get('source_review') and not state['frozen']:
+        review = source_comparison(out, last_batch, state['trials'], rows, spec['active_post_condition'])
+        atomic(out/'reviews'/(last_batch['batch_id']+'.json'), review)
+        ctx['source_comparison'] = clean(review)
     ctx['training']=training;ctx['spent']=state['spent']
     state['context_path']=str(out/'director_context.json');atomic(state['context_path'],ctx)
     answer=decide(ctx,out/'director',allow_agent=allow_agent,provider=provider,provider_settings=cfg.get('provider_settings'))
@@ -313,6 +388,11 @@ def run(out,*,real=False,allow_agent=False,provider=None,executor=None,interacti
                 atomic(out/'state.json',state);raise
             if answer is None:break
             apply_decision(out,state,spec,answer)
+            if (state.get('last_batch') or {}).get('source_review'):
+                print('[graph-loop] Agent', answer['answer']['operator'], answer['answer']['reason'], flush=True)
+                if state['pending']:
+                    state['phase']='ready_to_collect';atomic(out/'state.json',state)
+                    break
             if state['phase'] not in ('collect','analyze'):break
         else:
             state['phase']='decision_budget_exhausted';atomic(out/'state.json',state)

@@ -118,3 +118,42 @@ def test_small_development_batches_keep_the_candidate_until_coverage_complete(tm
     dev=[t for t in state['trials'] if t['request']['role']=='development']
     assert len(dev)==12 and len({t['request']['model_id'] for t in dev})==1
     assert sum(t['request']['role']=='independent' for t in state['trials'])==12
+
+
+def test_source_pilot_reviews_original_metric_and_queues_followup(tmp_path,monkeypatch):
+    from bottle_scan.state_graph import campaign
+    out,spec=make_campaign(tmp_path)
+    rows,_,noise=data()
+    condition=spec['active_post_condition']
+    source=next(r for r in rows if r['is_terminal'] and r['post'][condition].get('success') is True)
+    atomic(out/'seed_nodes.json',rows)
+    atomic(out/'revisions/0001/noise_model.json',noise)
+    state=read(out/'state.json');state['revision']=1
+    pilot={'cells':[{'settings':{'x':0},'actions':actions,'reps':1} for actions in ([],[[1.,0.]])]}
+    queue_plan(out,state,spec,pilot,'exploration',source_review={'revision':1,'source_node_id':source['node_id']})
+    original_ids=state['pending']['trial_ids']
+    def execute(request,directory,spec,cfg,**kwargs):
+        result=synthetic_executor(request,directory,spec,cfg)
+        first,last=result['nodes']
+        first['obs']=deepcopy(source['obs'])
+        if not request['actions']:
+            first.update(is_terminal=True,post=deepcopy(source['post']))
+            result['nodes']=[first]
+            result['cost']['actions']=0
+        else:
+            last['u_executed']=[.9,0.]
+            last['post'][condition].update(evaluated=False,success=None)
+        return result
+    calls=[]
+    def decide(ctx,*args,**kwargs):
+        calls.append(ctx['source_comparison'])
+        return {'status':'accepted','answer':{'operator':'collect_seed','plan':pilot,'reason':'more evidence'}}
+    monkeypatch.setattr(campaign,'decide',decide)
+    state=run(out,executor=execute)
+    assert state['spent']['trials']==2 and state['phase']=='ready_to_collect'
+    assert len(calls)==1 and state['pending']['trial_ids']!=original_ids
+    base,moved=calls[0]['arms']
+    assert base['source_matched'] and base['distance_to_source']<1e-6 and base['prior_success_groups_nearby']>0
+    assert base['consumer_success'] is True and base['measured_actions']==[]
+    assert moved['consumer_success'] is None and moved['measured_actions']==[[.9,0.]]
+    assert read(out/'reviews'/(state['last_batch']['batch_id']+'.json'))==calls[0]

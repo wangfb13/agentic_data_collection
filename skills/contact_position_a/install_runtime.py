@@ -36,6 +36,65 @@ def install_probe_window_observation(root,bundle):
     return {'changed':True,'path':str(target),'backup':str(backup/target.name)}
 
 
+def install_fixed_lift(root,bundle):
+    path=Path(bundle)/'runtime/bottle_scan/contact_recovery_backend.py'
+    source=path.read_text()
+    if 'supports_graph_fixed_lift = True' in source:return
+    needle='            if result["success"] and retain_probe_for_handoff:'
+    cls='class ContactRecoveryBackend(ContactSkillBackend):'
+    if source.count(needle)!=1 or source.count(cls)!=1:raise ValueError('Unknown V4 fixed-lift hook location')
+    updated=source.replace(cls,cls+'\n    supports_graph_fixed_lift = True').replace(
+        needle,'            if result["success"] and getattr(self, "graph_fixed_lift", None):\n'
+               '                self.graph_fixed_lift(runner, target)\n'+needle)
+    ast.parse(updated)
+    backup=Path(root)/'outputs/state_graph/v4_install_backups'/str(time.time_ns())
+    backup.mkdir(parents=True);shutil.copy2(path,backup/path.name)
+    path.write_text(updated)
+
+
+def install_fixed5_device_range(root, bundle):
+    """Allow only the hardware-profile floor for the new fixed5 graph protocol."""
+    path = Path(bundle)/'runtime/bottle_scan/contact_skill_backend.py'
+    source = path.read_text()
+    marker = '    # Explicit hardware-range fixed5 protocol; other gripper settings stay bound.'
+    if marker in source:
+        return
+    before = "    for section in ('motion', 'gripper'):"
+    after = marker + '''
+    graph = config.get('state_graph_execution') or {}
+    device_range = graph.get('fixed5_device_range') is True
+    if device_range:
+        request = _read_json(graph['request'])
+        spec = _read_json(request['spec'])
+        goal = 'fixed_squeeze_5sdk_lift_device_range'
+        if (request['post_condition'] != goal or spec['active_post_condition'] != goal
+                or config.get('skill_after') != 'stop'):
+            raise ValueError('Device-range gripper floor is exclusive to fixed5 stop mode')
+        profile = yaml.safe_load(Path(cfg['hardware_config']).read_text())
+        limit = profile['hardware']['public_ros']['raw_normalized_min']
+        if type(limit) not in (int, float) or not math.isfinite(limit) or not 0 <= limit < 1:
+            raise ValueError('Invalid hardware-profile gripper floor')
+        requested = cfg['gripper']['min_normalized']
+        if requested < limit or requested != math.ceil(limit * 1000 - 1e-10) / 1000:
+            raise ValueError('Fixed5 floor differs from the hardware operating range')
+''' + before
+    old_compare = '        if current != original:'
+    new_compare = '''        if section == 'gripper' and device_range:
+            original['min_normalized'] = requested
+''' + old_compare
+    if source.count(before) != 1 or source.count(old_compare) != 1:
+        raise ValueError('Unexpected V4 actuator configuration validator')
+    updated = source.replace(before, after).replace(old_compare, new_compare)
+    ast.parse(updated)
+    backup = Path(root)/'outputs/state_graph/v4_install_backups'/str(time.time_ns())
+    backup.mkdir(parents=True)
+    shutil.copy2(path, backup/path.name)
+    stage = backup/'updated.py'
+    stage.write_text(updated)
+    shutil.copymode(path, stage)
+    stage.replace(path)
+
+
 def install(root,bundle):
     root=Path(root).resolve();bundle=Path(bundle).resolve()
     target=bundle/'runtime/bottle_scan/contact_scheduler.py';text=target.read_text()
@@ -94,6 +153,8 @@ def install(root,bundle):
         if before!=after:
             ast.parse(after);backup=root/'outputs/state_graph/v4_install_backups'/str(time.time_ns());backup.mkdir(parents=True)
             shutil.copy2(file,backup/file.name);file.write_text(after)
+    install_fixed_lift(root,bundle)
+    install_fixed5_device_range(root,bundle)
     probe_fix=install_probe_window_observation(root,bundle)
     config=json.loads((bundle/'contact_scheduler.state_graph_v3_0330.json').read_text())
     config['state_graph_recording']={'enabled':True,'adapter_path':str(root/'skills/contact_position_a/scheduler.py'),'wrist_camera_key':'right_wrist'}

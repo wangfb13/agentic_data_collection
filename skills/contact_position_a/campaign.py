@@ -11,6 +11,7 @@ from bottle_scan.state_graph.campaign import RetryTrial, atomic
 from bottle_scan.state_graph.extract_nodes import extract_nodes
 from bottle_scan.state_graph.skill_interface import normalize_action
 from .scheduler import append_reviewed_outcome
+from .ready import FIXED_DEVICE, FIXED_GOALS, MEASURED_GOALS, check_fixed_config, device_floor, select
 
 
 def launch_request(request,directory,spec,cfg):
@@ -26,13 +27,21 @@ def launch_request(request,directory,spec,cfg):
     config=json.loads(Path(execution['scheduler_config']).read_text())
     config['state_graph_execution']={'repository':str(Path(__file__).resolve().parents[2]),'request':str(directory/'request.json')}
     config['single_correction_open_handoff']=False
-    floor=float(settings.get('closure_floor',.33))
-    if floor!=spec['post_conditions'][0]['consumer']['params']['closure_floor']:raise ValueError('Trial floor differs from active consumer')
+    active=spec['active_post_condition']
+    if request['post_condition']!=active:raise ValueError('Request belongs to a different Ready goal')
+    condition=next(c for c in spec['post_conditions'] if c['id']==active)
+    floor=float(settings.get('closure_floor',condition['consumer']['params']['closure_floor']))
+    if active == FIXED_DEVICE:
+        config['state_graph_execution']['fixed5_device_range'] = True
+    if floor!=condition['consumer']['params']['closure_floor']:raise ValueError('Trial floor differs from active consumer')
     config['execution_config']['gripper']['min_normalized']=floor
+    after='stop' if active in FIXED_GOALS else 'handoff'
+    config['skill_after']=after
+    if active in FIXED_GOALS:check_fixed_config(config['execution_config'], active)
     atomic(directory/'scheduler_config.json',config)
     env=dict(os.environ);env.update(execution.get('environment',{}))
     env.update(CONTACT_SCHEDULER_CONFIG=str(directory/'scheduler_config.json'),CONTACT_SCHEDULER_LOG_DIR=str(directory/'episodes'),
-        CONTACT_SKILL_AFTER='handoff',CONTACT_SKILL_RECOVERY='enabled',CONTACT_EXPERIMENT_B_OFFSET_MM=str(settings.get('a_offset_mm',0)),
+        CONTACT_SKILL_AFTER=after,CONTACT_SKILL_RECOVERY='enabled',CONTACT_EXPERIMENT_B_OFFSET_MM=str(settings.get('a_offset_mm',0)),
         CONTACT_GRAPH_MASS_CLASS=str(request['block'].get('mass_class','unrecorded')),CONTACT_GRAPH_APPROACH_POSE=settings.get('approach_pose','pose_0'),
         CONTACT_SKILL_TRIAL_ID=request['trial_id'],RIGHT_FORCE_POSITION_MIN=str(floor),RIGHT_GRIPPER_CLOSE_LIMIT=str(floor),
         CONTACT_GRAPH_TIME_PERIOD=time.strftime('%Y%m%d'),CONTACT_GRAPH_SENSOR_VERSION=str(execution.get('sensor_version','current_recorded_session')))
@@ -72,8 +81,10 @@ def execute_trial(request,directory,spec,cfg,*,real=False,interactive=True):
     if not real:raise ValueError('Real collection requires --real')
     directory=Path(directory)
     command,env=launch_request(request,directory,spec,cfg)
-    if not interactive:raise ValueError('This instance needs on-site reset and real L2 outcome review; use interactive execution')
+    if not interactive:raise ValueError('This instance needs on-site reset; use interactive execution')
     print('\n[graph-loop] '+request['trial_id']+' '+request['role']+' '+json.dumps({'settings':request['settings'],'block':request['block'],'actions':request['actions']},ensure_ascii=False),flush=True)
+    if request['post_condition'] in MEASURED_GOALS:
+        print('本次 Ready 目标：'+next(c['description'] for c in spec['post_conditions'] if c['id']==request['post_condition']), flush=True)
     mass = request['block'].get('mass_class')
     bottle = {'light': '轻瓶', 'heavy': '重瓶'}.get(mass, '本次指定的瓶子')
     print(f"本次请放【{bottle}】，a 偏移 {request['settings'].get('a_offset_mm', 0):+g} mm。", flush=True)
@@ -112,14 +123,20 @@ def recover_trial(request,directory,spec,cfg,*,interactive=True):
     if selected and (selected[-1]['request']['trial_id'] != request['trial_id'] or
                      selected[-1]['model_id'] != (request['model_id'] or 'planned_exploration')):
         raise ValueError('Episode did not load the requested graph trial and model')
-    terminal_observed = any(o.get('L1') is False or type(o.get('L2')) is bool for o in outcomes)
+    active=request['post_condition']
+    if active in MEASURED_GOALS:
+        from bottle_scan.state_graph.skill_interface import post_spec, load_callable
+        condition=post_spec(spec,active)
+        terminal_observed=any(load_callable(condition['evaluator'])({}, {'is_terminal':True,'consumer_outcome':o}, condition)['evaluated'] for o in outcomes)
+    else:
+        terminal_observed = any(o.get('L1') is False or type(o.get('L2')) is bool for o in outcomes)
     faults = [str(e.get('reason') or '') for e in events if e.get('event') in ('fault', 'episode_end')]
     reason = next((r for f in faults if (r := technical_error(f))), None) or proc.get('technical_error')
     if reason and not terminal_observed and (proc['returncode'] != 0 or any(technical_error(f) for f in faults)):
         raise RetryTrial(reason)
     if not selected:
         raise ValueError('Episode did not load the requested graph adapter')
-    if outcome and outcome.get('L1') is True and type(outcome.get('L2')) is not bool:
+    if active not in MEASURED_GOALS and outcome and outcome.get('L1') is True and type(outcome.get('L2')) is not bool:
         if not interactive:return None
         print('复核实际结果：ForcePolicy 接手后，瓶子是否提起并保持、不滑落？不能用“两指接触”替代。')
         value=input('输入 y=成功 / n=失败 / u=未观察到（保留待复核）：').strip().lower()
@@ -136,8 +153,9 @@ def recover_trial(request,directory,spec,cfg,*,interactive=True):
     if request['role']!='exploration':
         if review_file.exists():review=json.loads(review_file.read_text())
         elif interactive:
-            print('首次接触的真实类别：直接交给同一 ForcePolicy 是否可完成提起保持？依据配对的无修正试验或独立复核，不以 T0 距离判断。')
-            label=input('r=已验证可直接交接 / a=已验证需位置恢复 / u=未知：').strip().lower()
+            goal=next(c['description'] for c in spec['post_conditions'] if c['id']==active)
+            print(f'首次接触能否直接达到本轮目标（{goal}）？依据配对无修正试验或独立复核。')
+            label=input('r=已验证无需调整即可达到目标 / a=已验证需位置恢复 / u=未知：').strip().lower()
             evidence=input('记录上述判断所依据的试验编号或复核证据（未知可留空）：').strip() if label in ('r','a') else ''
             review={'initial_truth':{'r':'Ready','a':'NeedAction'}.get(label) if evidence else None,'evidence':evidence}
             atomic(review_file,review)
@@ -148,23 +166,48 @@ def recover_trial(request,directory,spec,cfg,*,interactive=True):
                     'target_truth':terminal['post'][request['post_condition']]['success'] if evaluated else None,
                     'invoked':invoked,'exit_declared':exit_declared,'rejected':not exit_declared,
                     'task_success':(outcome or {}).get('L3'),'evidence':[str(events_path),str(review_file)]}
-    applied=[r for r in rows if (r.get('u_receipt') or {}).get('applied')]
-    return {'trial_id':request['trial_id'],'status':'complete' if terminal and proc['returncode']==0 else 'failed','nodes':rows,'assessment':assessment,
-            'cost':{'actions':len(applied),'wall_seconds':proc['wall_seconds']},'evidence':[str(events_path)],
+    measured = [r['u_executed'] for r in rows if (r.get('u_receipt') or {}).get('applied')]
+    receipts = [r['u_receipt'] for r in rows if (r.get('u_receipt') or {}).get('applied')]
+    attempt_reason = None
+    for event in events:
+        if event.get('event') not in ('contact_completed','contact_incomplete','contact_failed','position_action_completed'):
+            continue
+        attempt_reason = event.get('reason')
+        # Motion can finish even when the next probe yields no observation.
+        for correction in event.get('corrections', []):
+            receipt = correction.get('receipt') or {}
+            if receipt.get('applied') is True and receipt not in receipts:
+                receipts.append(receipt)
+                measured.append([receipt['action_mm']])
+    if active in MEASURED_GOALS:
+        passed = terminal is not None and terminal['post'][active]['success'] is True
+    else:
+        passed = terminal is not None and proc['returncode'] == 0
+    return {'trial_id':request['trial_id'],'status':'complete' if passed else 'failed','nodes':rows,'assessment':assessment,
+            'cost':{'actions':len(measured),'wall_seconds':proc['wall_seconds']},'evidence':[str(events_path)],
+            'measured_actions':measured,'attempt_reason':attempt_reason,
             'unassessed_reason':None if terminal else 'No actual consumer endpoint; hardware/policy failures are not invented consumer labels.'}
 
 
 def prepare(spec,cfg):
     import hashlib
     spec=deepcopy(spec)
+    if cfg.get('ready_mode'):
+        floor = None
+        if cfg['ready_mode'] == 'fixed5':
+            scheduler = json.loads(Path(cfg['execution']['scheduler_config']).read_text())
+            floor = device_floor(scheduler['execution_config'])
+            cfg['execution']['fixed_settings']['closure_floor'] = floor
+        select(spec,cfg['ready_mode'],device_min=floor)
+        spec['budget']['max_new_trials']-=cfg.get('seed_trial_count',0)
     root=Path(__file__).resolve().parents[2]
     visual=Path(spec['data']['visual_model_directory'])
     spec['data']['visual_model_directory']=str(visual if visual.is_absolute() else root/visual)
     for key in ('artifact','cache_dir'):
         if key in spec.get('tactile_encoder',{}):
             value=Path(spec['tactile_encoder'][key]);spec['tactile_encoder'][key]=str(value if value.is_absolute() else root/value)
-    path=cfg['execution']['environment']['RIGHT_FORCE_POLICY_PATH']
-    version=hashlib.sha256(Path(path).read_bytes()).hexdigest()
     for condition in spec['post_conditions']:
-        if condition['consumer']['controller']=='existing_forcepolicy':condition['consumer']['version']=version
+        if condition['consumer']['controller']=='existing_forcepolicy':
+            path=cfg['execution']['environment']['RIGHT_FORCE_POLICY_PATH']
+            condition['consumer']['version']=hashlib.sha256(Path(path).read_bytes()).hexdigest()
     return spec
