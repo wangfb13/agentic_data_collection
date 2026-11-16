@@ -1,0 +1,59 @@
+{
+  "reference": "white_bottle_a_contact_target_20261110_v1",
+  "offset_usable": true,
+  "offset_validation": {
+    "n": 5,
+    "mae_mm": 1.2636911278133214,
+    "p90_mm": 2.1639713544882326,
+    "method": "held_out_trial_group",
+    "predictions_mm": [
+      -0.31553293854562076,
+      -4.184668395357139,
+      3.2937723445631404,
+      2.804120341184915,
+      2.4003640983340597
+    ],
+    "targets_mm": [
+      -1.9700362281583126,
+      -4.318177708718591,
+      0.7901556134912135,
+      3.1972216412894503,
+      0.7666390934180585
+    ],
+    "independent_final_validation": false
+  },
+  "offset_blockers": [],
+  "training_count": 17,
+  "placement_generalization_verified": false,
+  "graph": {
+    "post_conditions": {
+      "forcepolicy_handoff_l1_floor0330": {
+        "V": {
+          "status": "trained",
+          "n": 48,
+          "required": null,
+          "inferred_samples": null
+        },
+        "pi": {
+          "status": "trained",
+          "n": 16,
+          "required": null,
+          "inferred_samples": 0
+        }
+      }
+    },
+    "dynamics_status": "trained",
+    "active_post_condition": "forcepolicy_handoff_l1_floor0330",
+    "active_model_trained": true,
+    "trained_does_not_mean_independent_B_passed": true,
+    "robot_started": false,
+    "support_state_counts": {
+      "ready": 48
+    },
+    "observed_terminal_outcomes": {
+      "True": 18,
+      "False": 1
+    }
+  },
+  "robot_started": false
+}

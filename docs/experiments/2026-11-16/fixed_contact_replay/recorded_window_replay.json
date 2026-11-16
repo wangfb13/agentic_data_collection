@@ -1,0 +1,1049 @@
+{
+  "counts": {
+    "offset_servo": {
+      "ready": 28,
+      "Unknown": 20
+    },
+    "graph_policy": {
+      "ready": 45,
+      "Unknown": 3
+    }
+  },
+  "in_sample": true,
+  "robot_started": false,
+  "offset_mae_for_these_windows": null,
+  "windows": [
+    {
+      "observation_id": "invocation_001_1794644131024004288:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -2.481297559903587,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.9220849684787202,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794644377986214971:0",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "policy_uncertain",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794644566551026199:0",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "missing_or_edge_contact",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794644837381090483:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -4.334290293446362,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.3253110222066646,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794645083118805810:0",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "policy_uncertain",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794645231075391168:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -1.9399129803342354,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.655062338703708,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794645404634037247:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": 0.2606108288495168,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 2.9394699525653727,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794645527785269646:0",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "outside_observed_offset_range",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794645639167130879:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": 3.200230989045624,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.906311935265567,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794645791939517267:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": 3.5569808326142045,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.4135449713750607,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794646014382847449:0",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "policy_uncertain",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794646957436459728:0",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "outside_observed_offset_range",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794646957436459728:1",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -3.226766782879767,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.5993830588518945,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647154183068471:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": 4.310633691304361,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.9700306006458854,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647279178053534:0",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "policy_uncertain",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647279178053534:1",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -2.138875249934821,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.346510838329058,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647450930699942:0",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "missing_or_edge_contact",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647450930699942:1",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "policy_uncertain",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647741383099057:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -3.9831243382370602,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.0504789532921657,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647741383099057:1",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "policy_out_of_distribution",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647968104611341:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -1.6211785906194884,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.341445967850608,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647968104611341:1",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "policy_uncertain",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648111025574579:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -3.9636040534481594,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.2071546807324056,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648111025574579:1",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": 0.8176544822865488,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.477888095117412,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648254313683801:0",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "policy_uncertain",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648394583519145:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": 0.22418798534098086,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 2.754811809720637,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648394583519145:1",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "policy_uncertain",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648522008618793:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -0.21047656453442895,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 2.7102351961894238,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648522008618793:1",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "policy_uncertain",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648666158555907:0",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "outside_observed_offset_range",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648886332326412:0",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "policy_out_of_distribution",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648886332326412:1",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -5.046029441556525,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.5813763748772223,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649123846699037:0",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "policy_out_of_distribution",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649123846699037:1",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "policy_uncertain",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649339009849696:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -4.76039653393172,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.896674904461997,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649339009849696:1",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -1.3691030771434982,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.823240090409232,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649605170363688:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -2.7591461285012047,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.2936547245837753,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649728203630997:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -4.365012043263148,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.590116249322885,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649728203630997:1",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -0.2924464608765983,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 2.9404754979335657,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649895482301628:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -4.928378420487637,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.0517040774872193,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649895482301628:1",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -2.26016797363451,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.905802442440933,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794650100354443340:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -1.731454599663738,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.509472286032084,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794650100354443340:1",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -0.09241650988096083,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.383374605416958,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794650552227508605:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": 0.03939433087305631,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 2.7686253702993793,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794650552227508605:1",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "missing_or_edge_contact",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794650731590636008:0",
+      "action_source": "offset_servo",
+      "state": "Unknown",
+      "reason": "outside_observed_offset_range",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794650875069260619:0",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": 1.346374204813804,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 2.948809407038248,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794650875069260619:1",
+      "action_source": "offset_servo",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": {
+        "offset_a_mm": -2.9991237215840707,
+        "offset_c_mm": null,
+        "offset_l_mm": null,
+        "uncertainty_mm": 3.0642232847516975,
+        "model_id": "3a7d7bfb5f2272056a7f"
+      },
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794644131024004288:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794644377986214971:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794644566551026199:0",
+      "action_source": "graph_policy",
+      "state": "Unknown",
+      "reason": "missing_or_edge_contact",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794644837381090483:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794645083118805810:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794645231075391168:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794645404634037247:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794645527785269646:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794645639167130879:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794645791939517267:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794646014382847449:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794646957436459728:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794646957436459728:1",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647154183068471:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647279178053534:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647279178053534:1",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647450930699942:0",
+      "action_source": "graph_policy",
+      "state": "Unknown",
+      "reason": "missing_or_edge_contact",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647450930699942:1",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647741383099057:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647741383099057:1",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647968104611341:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794647968104611341:1",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648111025574579:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648111025574579:1",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648254313683801:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648394583519145:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648394583519145:1",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648522008618793:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648522008618793:1",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648666158555907:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648886332326412:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794648886332326412:1",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649123846699037:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649123846699037:1",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649339009849696:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649339009849696:1",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649605170363688:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649728203630997:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649728203630997:1",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649895482301628:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794649895482301628:1",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794650100354443340:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794650100354443340:1",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794650552227508605:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794650552227508605:1",
+      "action_source": "graph_policy",
+      "state": "Unknown",
+      "reason": "missing_or_edge_contact",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794650731590636008:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794650875069260619:0",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    },
+    {
+      "observation_id": "invocation_001_1794650875069260619:1",
+      "action_source": "graph_policy",
+      "state": "ready",
+      "reason": "observed_post_condition",
+      "offset_estimate": null,
+      "action": null,
+      "offset_ground_truth_mm": null
+    }
+  ]
+}

@@ -1,0 +1,702 @@
+{
+  "batch6": [
+    {
+      "trial": "batch_6_91578e00_0001",
+      "mass": "light",
+      "planned_a": -5.0,
+      "windows": [
+        {
+          "node_id": "invocation_001_1794736664750179759:0",
+          "phase": "B_pre",
+          "logged": {
+            "state": "Unknown",
+            "p_hat": 0.7685436823344076,
+            "invoke": 0.2597181150029131,
+            "exit": 0.7402818849970879,
+            "action_mm": null,
+            "reason": "no_supported_recovery"
+          },
+          "measured_action_mm": null,
+          "replay": {
+            "with_wrist": {
+              "state": "Unknown",
+              "p_hat": 0.7685436823344074,
+              "invoke": 0.2597181150029133,
+              "exit": 0.740281884997087,
+              "action_mm": null,
+              "reason": "no_supported_recovery"
+            },
+            "without_wrist": {
+              "state": "Unknown",
+              "p_hat": 0.7551097349949318,
+              "invoke": 0.24928336350531127,
+              "exit": 0.7507166364946889,
+              "action_mm": null,
+              "reason": "no_supported_recovery"
+            }
+          },
+          "same_as_field": true,
+          "fixed5": null
+        }
+      ],
+      "fault": []
+    },
+    {
+      "trial": "batch_6_91578e00_0002",
+      "mass": "heavy",
+      "planned_a": -5.0,
+      "windows": [
+        {
+          "node_id": "invocation_001_1794736991214429411:0",
+          "phase": "B_pre",
+          "logged": {
+            "state": "Unknown",
+            "p_hat": 0.6847736163713416,
+            "invoke": 0.34744620509209057,
+            "exit": 0.6525537949079068,
+            "action_mm": null,
+            "reason": "no_supported_recovery"
+          },
+          "measured_action_mm": null,
+          "replay": {
+            "with_wrist": {
+              "state": "Unknown",
+              "p_hat": 0.6847736163713417,
+              "invoke": 0.34744620509209123,
+              "exit": 0.6525537949079084,
+              "action_mm": null,
+              "reason": "no_supported_recovery"
+            },
+            "without_wrist": {
+              "state": "recoverable",
+              "p_hat": 0.6703196037758266,
+              "invoke": 0.674134550039829,
+              "exit": 0.32586544996017136,
+              "action_mm": 6.235448251333171,
+              "reason": null
+            }
+          },
+          "same_as_field": true,
+          "fixed5": null
+        }
+      ],
+      "fault": []
+    },
+    {
+      "trial": "batch_6_91578e00_0003",
+      "mass": "light",
+      "planned_a": -5.0,
+      "windows": [
+        {
+          "node_id": "invocation_001_1794737272289506532:0",
+          "phase": "B_pre",
+          "logged": {
+            "state": "recoverable",
+            "p_hat": 0.6910636571683081,
+            "invoke": 0.5834057109987069,
+            "exit": 0.41659428900128964,
+            "action_mm": 6.107941992887696,
+            "reason": null
+          },
+          "measured_action_mm": null,
+          "replay": {
+            "with_wrist": {
+              "state": "recoverable",
+              "p_hat": 0.6910636571683081,
+              "invoke": 0.5834057109987083,
+              "exit": 0.41659428900129164,
+              "action_mm": 6.107941992887698,
+              "reason": null
+            },
+            "without_wrist": {
+              "state": "recoverable",
+              "p_hat": 0.6609221930878623,
+              "invoke": 0.7471269321379815,
+              "exit": 0.25287306786201863,
+              "action_mm": 8.852667286821749,
+              "reason": null
+            }
+          },
+          "same_as_field": true,
+          "fixed5": null
+        },
+        {
+          "node_id": "invocation_001_1794737272289506532:1",
+          "phase": "B_post",
+          "logged": {
+            "state": "ready",
+            "p_hat": 0.8075682939053813,
+            "invoke": 0.0007904706767933637,
+            "exit": 0.9992095293232066,
+            "action_mm": null,
+            "reason": null
+          },
+          "measured_action_mm": 6.431318259374273,
+          "replay": {
+            "with_wrist": {
+              "state": "ready",
+              "p_hat": 0.8075682939053813,
+              "invoke": 0.0007904706767933665,
+              "exit": 0.9992095293232066,
+              "action_mm": null,
+              "reason": null
+            },
+            "without_wrist": {
+              "state": "ready",
+              "p_hat": 0.8271484765937975,
+              "invoke": 0.009109513490462644,
+              "exit": 0.9908904865095373,
+              "action_mm": null,
+              "reason": null
+            }
+          },
+          "same_as_field": true,
+          "fixed5": true
+        }
+      ],
+      "fault": []
+    },
+    {
+      "trial": "batch_6_91578e00_0004",
+      "mass": "heavy",
+      "planned_a": -5.0,
+      "windows": [
+        {
+          "node_id": "invocation_001_1794737438312689586:0",
+          "phase": "B_pre",
+          "logged": {
+            "state": "recoverable",
+            "p_hat": 0.6978770484825095,
+            "invoke": 0.7337746592627746,
+            "exit": 0.2662253407372221,
+            "action_mm": 4.362952416240807,
+            "reason": null
+          },
+          "measured_action_mm": null,
+          "replay": {
+            "with_wrist": {
+              "state": "recoverable",
+              "p_hat": 0.6978770484825096,
+              "invoke": 0.7337746592627759,
+              "exit": 0.2662253407372236,
+              "action_mm": 4.362952416240807,
+              "reason": null
+            },
+            "without_wrist": {
+              "state": "recoverable",
+              "p_hat": 0.6860617051584306,
+              "invoke": 0.6802056026810683,
+              "exit": 0.31979439731893156,
+              "action_mm": 7.86330649254096,
+              "reason": null
+            }
+          },
+          "same_as_field": true,
+          "fixed5": null
+        },
+        {
+          "node_id": "invocation_001_1794737438312689586:1",
+          "phase": "B_post",
+          "logged": {
+            "state": "Unknown",
+            "p_hat": 0.7935267912891508,
+            "invoke": 0.0024665199702900856,
+            "exit": 0.99753348002971,
+            "action_mm": null,
+            "reason": "no_supported_recovery"
+          },
+          "measured_action_mm": 5.126241854004757,
+          "replay": {
+            "with_wrist": {
+              "state": "Unknown",
+              "p_hat": 0.7935267912891513,
+              "invoke": 0.002466519970290081,
+              "exit": 0.99753348002971,
+              "action_mm": null,
+              "reason": "no_supported_recovery"
+            },
+            "without_wrist": {
+              "state": "ready",
+              "p_hat": 0.8115321048320709,
+              "invoke": 0.030556374252751442,
+              "exit": 0.9694436257472486,
+              "action_mm": null,
+              "reason": null
+            }
+          },
+          "same_as_field": true,
+          "fixed5": null
+        }
+      ],
+      "fault": []
+    },
+    {
+      "trial": "batch_6_91578e00_0005",
+      "mass": "light",
+      "planned_a": -5.0,
+      "windows": [
+        {
+          "node_id": "invocation_001_1794737625506400145:0",
+          "phase": "B_pre",
+          "logged": {
+            "state": "ready",
+            "p_hat": 0.8155511392214974,
+            "invoke": 0.0017347862343332562,
+            "exit": 0.9982652137656667,
+            "action_mm": null,
+            "reason": null
+          },
+          "measured_action_mm": null,
+          "replay": {
+            "with_wrist": {
+              "state": "ready",
+              "p_hat": 0.8155511392214974,
+              "invoke": 0.0017347862343332502,
+              "exit": 0.9982652137656669,
+              "action_mm": null,
+              "reason": null
+            },
+            "without_wrist": {
+              "state": "ready",
+              "p_hat": 0.8427599243534939,
+              "invoke": 0.01756067690569645,
+              "exit": 0.9824393230943035,
+              "action_mm": null,
+              "reason": null
+            }
+          },
+          "same_as_field": true,
+          "fixed5": false
+        }
+      ],
+      "fault": []
+    },
+    {
+      "trial": "batch_6_91578e00_0006",
+      "mass": "heavy",
+      "planned_a": -5.0,
+      "windows": [],
+      "fault": [
+        "Experiment B positioning stopped on possible contact"
+      ]
+    },
+    {
+      "trial": "batch_6_91578e00_0007",
+      "mass": "light",
+      "planned_a": 0.0,
+      "windows": [
+        {
+          "node_id": "invocation_001_1794738111998183542:0",
+          "phase": "B_pre",
+          "logged": {
+            "state": "ready",
+            "p_hat": 0.8477110237557088,
+            "invoke": 0.005812872517206412,
+            "exit": 0.9941871274827936,
+            "action_mm": null,
+            "reason": null
+          },
+          "measured_action_mm": null,
+          "replay": {
+            "with_wrist": {
+              "state": "ready",
+              "p_hat": 0.8477110237557086,
+              "invoke": 0.0058128725172064185,
+              "exit": 0.9941871274827936,
+              "action_mm": null,
+              "reason": null
+            },
+            "without_wrist": {
+              "state": "ready",
+              "p_hat": 0.8459674543011569,
+              "invoke": 0.007379802077340889,
+              "exit": 0.9926201979226591,
+              "action_mm": null,
+              "reason": null
+            }
+          },
+          "same_as_field": true,
+          "fixed5": true
+        }
+      ],
+      "fault": []
+    },
+    {
+      "trial": "batch_6_91578e00_0008",
+      "mass": "heavy",
+      "planned_a": 0.0,
+      "windows": [
+        {
+          "node_id": "invocation_001_1794738230641460332:0",
+          "phase": "B_pre",
+          "logged": {
+            "state": "ready",
+            "p_hat": 0.8374102713513919,
+            "invoke": 0.0005855273399456339,
+            "exit": 0.9994144726600543,
+            "action_mm": null,
+            "reason": null
+          },
+          "measured_action_mm": null,
+          "replay": {
+            "with_wrist": {
+              "state": "ready",
+              "p_hat": 0.8374102713513922,
+              "invoke": 0.000585527339945636,
+              "exit": 0.9994144726600543,
+              "action_mm": null,
+              "reason": null
+            },
+            "without_wrist": {
+              "state": "ready",
+              "p_hat": 0.8347491365620165,
+              "invoke": 0.008282906025500737,
+              "exit": 0.9917170939744991,
+              "action_mm": null,
+              "reason": null
+            }
+          },
+          "same_as_field": true,
+          "fixed5": false
+        }
+      ],
+      "fault": []
+    },
+    {
+      "trial": "batch_6_91578e00_0009",
+      "mass": "light",
+      "planned_a": 0.0,
+      "windows": [
+        {
+          "node_id": "invocation_001_1794738395750039867:0",
+          "phase": "B_pre",
+          "logged": {
+            "state": "ready",
+            "p_hat": 0.8123094981038227,
+            "invoke": 0.0003837477512244566,
+            "exit": 0.9996162522487756,
+            "action_mm": null,
+            "reason": null
+          },
+          "measured_action_mm": null,
+          "replay": {
+            "with_wrist": {
+              "state": "ready",
+              "p_hat": 0.812309498103823,
+              "invoke": 0.0003837477512244566,
+              "exit": 0.9996162522487756,
+              "action_mm": null,
+              "reason": null
+            },
+            "without_wrist": {
+              "state": "ready",
+              "p_hat": 0.8006153116772328,
+              "invoke": 0.027789362025909727,
+              "exit": 0.9722106379740902,
+              "action_mm": null,
+              "reason": null
+            }
+          },
+          "same_as_field": true,
+          "fixed5": true
+        }
+      ],
+      "fault": []
+    },
+    {
+      "trial": "batch_6_91578e00_0010",
+      "mass": "heavy",
+      "planned_a": 0.0,
+      "windows": [],
+      "fault": [
+        "Experiment B contact did not meet scheduler pre-gate within 5 s"
+      ]
+    },
+    {
+      "trial": "batch_6_91578e00_0011",
+      "mass": "light",
+      "planned_a": 0.0,
+      "windows": [
+        {
+          "node_id": "invocation_001_1794738656606841338:0",
+          "phase": "B_pre",
+          "logged": {
+            "state": "ready",
+            "p_hat": 0.857409622475289,
+            "invoke": 0.00010897690737753977,
+            "exit": 0.9998910230926226,
+            "action_mm": null,
+            "reason": null
+          },
+          "measured_action_mm": null,
+          "replay": {
+            "with_wrist": {
+              "state": "ready",
+              "p_hat": 0.8574096224752887,
+              "invoke": 0.00010897690737753977,
+              "exit": 0.9998910230926226,
+              "action_mm": null,
+              "reason": null
+            },
+            "without_wrist": {
+              "state": "ready",
+              "p_hat": 0.8454210715284256,
+              "invoke": 0.003235436903762285,
+              "exit": 0.9967645630962377,
+              "action_mm": null,
+              "reason": null
+            }
+          },
+          "same_as_field": true,
+          "fixed5": true
+        }
+      ],
+      "fault": []
+    },
+    {
+      "trial": "batch_6_91578e00_0012",
+      "mass": "heavy",
+      "planned_a": 0.0,
+      "windows": [
+        {
+          "node_id": "invocation_001_1794738792083651938:0",
+          "phase": "B_pre",
+          "logged": {
+            "state": "ready",
+            "p_hat": 0.8062315693722402,
+            "invoke": 0.14230063590890932,
+            "exit": 0.8576993640910896,
+            "action_mm": null,
+            "reason": null
+          },
+          "measured_action_mm": null,
+          "replay": {
+            "with_wrist": {
+              "state": "ready",
+              "p_hat": 0.80623156937224,
+              "invoke": 0.14230063590891007,
+              "exit": 0.8576993640910902,
+              "action_mm": null,
+              "reason": null
+            },
+            "without_wrist": {
+              "state": "ready",
+              "p_hat": 0.8143146680944504,
+              "invoke": 0.01754978269439927,
+              "exit": 0.9824502173056007,
+              "action_mm": null,
+              "reason": null
+            }
+          },
+          "same_as_field": true,
+          "fixed5": false
+        }
+      ],
+      "fault": []
+    }
+  ],
+  "summary": {
+    "with_wrist": {
+      "first_states": {
+        "Unknown": 2,
+        "recoverable": 2,
+        "ready": 6
+      },
+      "first_with_outcome": {
+        "fixed5_success": {
+          "ready": 3
+        },
+        "fixed5_failure": {
+          "ready": 3
+        }
+      },
+      "all_endpoint_windows": {
+        "fixed5_success": {
+          "ready": 4
+        },
+        "fixed5_failure": {
+          "ready": 3
+        }
+      }
+    },
+    "without_wrist": {
+      "first_states": {
+        "Unknown": 1,
+        "recoverable": 3,
+        "ready": 6
+      },
+      "first_with_outcome": {
+        "fixed5_success": {
+          "ready": 3
+        },
+        "fixed5_failure": {
+          "ready": 3
+        }
+      },
+      "all_endpoint_windows": {
+        "fixed5_success": {
+          "ready": 4
+        },
+        "fixed5_failure": {
+          "ready": 3
+        }
+      }
+    }
+  },
+  "batch5": [
+    {
+      "trial_id": "batch_5_f4ad8ab2_0001",
+      "source_matched": null,
+      "distance_to_source": null,
+      "requested_actions": [],
+      "measured_actions": [],
+      "consumer_success": null
+    },
+    {
+      "trial_id": "batch_5_f4ad8ab2_0002",
+      "source_matched": true,
+      "distance_to_source": 0.7089490647272109,
+      "requested_actions": [],
+      "measured_actions": [],
+      "consumer_success": false
+    },
+    {
+      "trial_id": "batch_5_f4ad8ab2_0003",
+      "source_matched": true,
+      "distance_to_source": 0.4905978769981612,
+      "requested_actions": [
+        {
+          "kind": "tcp_translation_a",
+          "u": [
+            10.0
+          ]
+        }
+      ],
+      "measured_actions": [
+        [
+          10.21866353090844
+        ]
+      ],
+      "consumer_success": true
+    },
+    {
+      "trial_id": "batch_5_f4ad8ab2_0004",
+      "source_matched": true,
+      "distance_to_source": 0.5874945927756532,
+      "requested_actions": [
+        {
+          "kind": "tcp_translation_a",
+          "u": [
+            10.0
+          ]
+        }
+      ],
+      "measured_actions": [
+        [
+          10.357936199591965
+        ]
+      ],
+      "consumer_success": true
+    }
+  ],
+  "post_condition": "fixed_squeeze_5sdk_lift_floor0330",
+  "model_id": "7df34da00e0a45e9f0730c64",
+  "train_windows": 83,
+  "train_groups": 63,
+  "train_node_ids": [
+    "invocation_001_1794644131024004288:0",
+    "invocation_001_1794644377986214971:0",
+    "invocation_001_1794644566551026199:0",
+    "invocation_001_1794644837381090483:0",
+    "invocation_001_1794645083118805810:0",
+    "invocation_001_1794645231075391168:0",
+    "invocation_001_1794645404634037247:0",
+    "invocation_001_1794645527785269646:0",
+    "invocation_001_1794645639167130879:0",
+    "invocation_001_1794645791939517267:0",
+    "invocation_001_1794646014382847449:0",
+    "invocation_001_1794646957436459728:0",
+    "invocation_001_1794646957436459728:1",
+    "invocation_001_1794647154183068471:0",
+    "invocation_001_1794647279178053534:0",
+    "invocation_001_1794647279178053534:1",
+    "invocation_001_1794647450930699942:0",
+    "invocation_001_1794647450930699942:1",
+    "invocation_001_1794647741383099057:0",
+    "invocation_001_1794647741383099057:1",
+    "invocation_001_1794647968104611341:0",
+    "invocation_001_1794647968104611341:1",
+    "invocation_001_1794648111025574579:0",
+    "invocation_001_1794648111025574579:1",
+    "invocation_001_1794648254313683801:0",
+    "invocation_001_1794648394583519145:0",
+    "invocation_001_1794648394583519145:1",
+    "invocation_001_1794648522008618793:0",
+    "invocation_001_1794648522008618793:1",
+    "invocation_001_1794648666158555907:0",
+    "invocation_001_1794648886332326412:0",
+    "invocation_001_1794648886332326412:1",
+    "invocation_001_1794649123846699037:0",
+    "invocation_001_1794649123846699037:1",
+    "invocation_001_1794649339009849696:0",
+    "invocation_001_1794649339009849696:1",
+    "invocation_001_1794649605170363688:0",
+    "invocation_001_1794649728203630997:0",
+    "invocation_001_1794649728203630997:1",
+    "invocation_001_1794649895482301628:0",
+    "invocation_001_1794649895482301628:1",
+    "invocation_001_1794650100354443340:0",
+    "invocation_001_1794650100354443340:1",
+    "invocation_001_1794650552227508605:0",
+    "invocation_001_1794650552227508605:1",
+    "invocation_001_1794650731590636008:0",
+    "invocation_001_1794650875069260619:0",
+    "invocation_001_1794650875069260619:1",
+    "d36aa5cf66f6d3455aaa7977",
+    "d9fb4c031f4f80f7f9e77d8d",
+    "30344b0082e87b8340554d0d",
+    "099ab46e7e75803aca334f26",
+    "4758ac5f6d2349597f3f7f32",
+    "a88092c597c5bb40aa5dcfd4",
+    "ea56097ff0c646fa022235ad",
+    "0ed43a0c87c198381f65e8d2",
+    "3fc430ea3af456dc7bfdd977",
+    "ed76a058dcbe0b44ea95a872",
+    "9caa8f0dede986119e563962",
+    "0fbc6c2999c1edfceb2b46b2",
+    "9cb10669f925134f4761ed05",
+    "16398348e3fd0afd59b49707",
+    "ae591fe82487c71355e24e1b",
+    "5ba03783ffa2512b347b5462",
+    "a7e7b19ab783f027c1f72cd6",
+    "4362b967c96779ff2a409afd",
+    "863d4ab3828ba00fda797458",
+    "5dbc0cc63b08d130371b6a22",
+    "4278c131c71b6b6d93a280bb",
+    "54b8dea213fb07e3e69ba97f",
+    "invocation_001_1794733557851478578:0",
+    "invocation_001_1794733716640062484:0",
+    "invocation_001_1794733716640062484:1",
+    "invocation_001_1794734471342935802:0",
+    "invocation_001_1794734650586756870:0",
+    "invocation_001_1794734790230143042:0",
+    "invocation_001_1794734790230143042:1",
+    "invocation_001_1794734965307726627:0",
+    "invocation_001_1794735942777232309:0",
+    "invocation_001_1794736087693291003:0",
+    "invocation_001_1794736087693291003:1",
+    "invocation_001_1794736238987330473:0",
+    "invocation_001_1794736238987330473:1"
+  ],
+  "held_out_groups_disjoint": true,
+  "train_graph_status": {
+    "with_wrist": {
+      "ready": 73,
+      "recoverable": 10
+    },
+    "without_wrist": {
+      "ready": 74,
+      "recoverable": 9
+    }
+  }
+}

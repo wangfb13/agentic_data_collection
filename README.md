@@ -542,3 +542,7 @@ bash run_on_5090.sh vision-stage1 --help
 
 
 Agent 主导的技能采集、训练和 A/B 验证见 [技能闭环指南](docs/SKILL_LOOP_GUIDE_zh.md) 和 [状态集合与 Agent 主导决策](docs/AGENT_DIRECTOR_STATE_SET_zh.md)。
+
+## 固定接触参考与 a 轴离线验证
+
+[固定参考部署说明](docs/FIXED_CONTACT_A_zh.md) · [白瓶、绿瓶实验报告与逐窗口结果](docs/experiments/2026-11-16/README.md)

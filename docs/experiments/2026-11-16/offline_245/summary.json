@@ -1,0 +1,1474 @@
+{
+  "white": {
+    "offset": {
+      "est": {
+        "n": 6,
+        "groups": 6,
+        "correct_sign": 6,
+        "plus": 5,
+        "mae": 0.9878536901405225,
+        "bias": 0.41002131329590513,
+        "p90": 1.726620214206837,
+        "zero": 3.409679847963763
+      },
+      "diagnostic": {
+        "n": 22,
+        "groups": 22,
+        "correct_sign": 15,
+        "plus": 16,
+        "mae": 4.923618528752291,
+        "bias": -0.5368243873038298,
+        "p90": 9.42539062322253,
+        "zero": 4.9090736570727245
+      },
+      "all": 22,
+      "reject_windows": {
+        "outside_training_range": 3,
+        "policy_uncertain": 10,
+        "edge": 6,
+        "policy_out_of_distribution": 4
+      },
+      "by_campaign": {
+        "campaign_white_a_v4_fixed5_history": [
+          0,
+          6
+        ],
+        "campaign_white_a_v4": [
+          6,
+          16
+        ]
+      }
+    },
+    "cv": {
+      "decision": {
+        "graph": {
+          "n": 95,
+          "scored": 37,
+          "ready_success": 7,
+          "ready_failure": 4,
+          "available_success": 29,
+          "available_fail": 8,
+          "states": {
+            "Unknown": 34,
+            "recoverable": 19,
+            "ready": 42
+          },
+          "n_groups": 73,
+          "logged_transitions": 22,
+          "paired_invoked": 10,
+          "paired_same_sign": 10,
+          "paired_closeness_1mm": 1,
+          "recorded_outcome_for_near": {
+            "None": 1
+          },
+          "action_head_n": 22,
+          "action_head_sign": 17,
+          "action_head_mae": 4.35416892178954
+        },
+        "direct": {
+          "n": 95,
+          "scored": 37,
+          "ready_success": 10,
+          "ready_failure": 2,
+          "available_success": 29,
+          "available_fail": 8,
+          "states": {
+            "ready": 45,
+            "recoverable": 26,
+            "Unknown": 24
+          },
+          "n_groups": 73,
+          "logged_transitions": 22,
+          "paired_invoked": 8,
+          "paired_same_sign": 8,
+          "paired_closeness_1mm": 0,
+          "recorded_outcome_for_near": {},
+          "action_head_n": 22,
+          "action_head_sign": 17,
+          "action_head_mae": 4.237494707634437
+        },
+        "neighbor": {
+          "n": 95,
+          "scored": 37,
+          "ready_success": 7,
+          "ready_failure": 2,
+          "available_success": 29,
+          "available_fail": 8,
+          "states": {
+            "Unknown": 58,
+            "recoverable": 4,
+            "ready": 33
+          },
+          "n_groups": 73,
+          "logged_transitions": 22,
+          "paired_invoked": 2,
+          "paired_same_sign": 2,
+          "paired_closeness_1mm": 0,
+          "recorded_outcome_for_near": {},
+          "action_head_n": 22,
+          "action_head_sign": 17,
+          "action_head_mae": 4.237494707634437
+        }
+      },
+      "folds": [
+        {
+          "type": "fold",
+          "color": "white",
+          "fold": "0",
+          "tr": 73,
+          "te": 22,
+          "end": {
+            "False": 8,
+            "True": 7
+          },
+          "actions": 22,
+          "blocks_test": [
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/white_a_director_live_0330_20261110/batches/001/A"
+          ],
+          "graph_actions": 0,
+          "dynamics": "trained"
+        },
+        {
+          "type": "fold",
+          "color": "white",
+          "fold": "1",
+          "tr": 76,
+          "te": 19,
+          "end": {
+            "True": 29,
+            "False": 8
+          },
+          "actions": 14,
+          "blocks_test": [
+            "campaign_white_a_v4/batch_2_11d54a12"
+          ],
+          "graph_actions": 14,
+          "dynamics": "trained"
+        },
+        {
+          "type": "fold",
+          "color": "white",
+          "fold": "2",
+          "tr": 77,
+          "te": 18,
+          "end": {
+            "True": 29,
+            "False": 8
+          },
+          "actions": 14,
+          "blocks_test": [
+            "campaign_white_a_v4/batch_3_633c6147"
+          ],
+          "graph_actions": 14,
+          "dynamics": "trained"
+        },
+        {
+          "type": "fold",
+          "color": "white",
+          "fold": "3",
+          "tr": 78,
+          "te": 17,
+          "end": {
+            "True": 25,
+            "False": 2
+          },
+          "actions": 19,
+          "blocks_test": [
+            "campaign_white_a_v4_fixed5_history/batch_4_09a3e1b4",
+            "campaign_white_a_v4_fixed5_history/batch_6_91578e00"
+          ],
+          "graph_actions": 19,
+          "dynamics": "trained"
+        },
+        {
+          "type": "fold",
+          "color": "white",
+          "fold": "4",
+          "tr": 76,
+          "te": 19,
+          "end": {
+            "True": 26,
+            "False": 6
+          },
+          "actions": 19,
+          "blocks_test": [
+            "campaign_white_a_v4/batch_1_aa3a5a34",
+            "campaign_white_a_v4_fixed5_history/batch_3_4566554c",
+            "campaign_white_a_v4_fixed5_history/batch_5_f4ad8ab2"
+          ],
+          "graph_actions": 19,
+          "dynamics": "trained"
+        }
+      ],
+      "native": {
+        "graph": {
+          "normalized_mae": 0.674910897051386,
+          "fold_mae": {
+            "1": 0.8102309310096399,
+            "2": 0.4750884989464668,
+            "3": 0.9837491610627155,
+            "4": 0.5380789374311636
+          },
+          "raw": {
+            "centroid_uv_px": 4.123213559647516,
+            "area_px": 212.01607473250547,
+            "force_sdk": 0.10676086425605284
+          }
+        },
+        "static": {
+          "normalized_mae": 0.9462932427679559,
+          "fold_mae": {
+            "1": 1.1600497311522973,
+            "2": 0.6978744268526182,
+            "3": 1.1273137764257257,
+            "4": 0.8577055825261759
+          },
+          "raw": {
+            "centroid_uv_px": 8.77981717164155,
+            "area_px": 264.4886363636364,
+            "force_sdk": 0.1539394896193919
+          }
+        },
+        "near_action": {
+          "normalized_mae": 0.8961259709082323,
+          "fold_mae": {
+            "1": 0.9875690794540907,
+            "2": 0.7668067159630356,
+            "3": 1.1733002775068513,
+            "4": 0.7199547213745158
+          },
+          "raw": {
+            "centroid_uv_px": 4.051757437903515,
+            "area_px": 218.12310606060606,
+            "force_sdk": 0.1666305425676818
+          }
+        },
+        "linear": {
+          "normalized_mae": 0.7216768028494275,
+          "fold_mae": {
+            "1": 0.8518469926825367,
+            "2": 0.4829328855611243,
+            "3": 1.0921948613659276,
+            "4": 0.6406886842134446
+          },
+          "raw": {
+            "centroid_uv_px": 3.0427047369049753,
+            "area_px": 228.5094746145961,
+            "force_sdk": 0.1149368268922568
+          }
+        },
+        "n": 22,
+        "groups": 22,
+        "wins": {
+          "static": 20,
+          "near_action": 19,
+          "linear": 11
+        },
+        "uncertainty_gate": {
+          "n": 22,
+          "graph": 0.674910897051386,
+          "static": 0.9462932427679559,
+          "near_action": 0.8961259709082323,
+          "linear": 0.7216768028494275
+        }
+      },
+      "measured": {
+        "graph": {
+          "normalized_mae": 0.6717808192961129,
+          "fold_mae": {
+            "1": 0.7988252467555557,
+            "2": 0.47698753780299963,
+            "3": 0.984770927442067,
+            "4": 0.5394543219066135
+          },
+          "raw": {
+            "centroid_uv_px": 3.934838564509593,
+            "area_px": 209.10198365397045,
+            "force_sdk": 0.107012565810268
+          }
+        },
+        "static": {
+          "normalized_mae": 0.9462932427679559,
+          "fold_mae": {
+            "1": 1.1600497311522973,
+            "2": 0.6978744268526182,
+            "3": 1.1273137764257257,
+            "4": 0.8577055825261759
+          },
+          "raw": {
+            "centroid_uv_px": 8.77981717164155,
+            "area_px": 264.4886363636364,
+            "force_sdk": 0.1539394896193919
+          }
+        },
+        "near_action": {
+          "normalized_mae": 0.8844931557983323,
+          "fold_mae": {
+            "1": 0.9914278906065603,
+            "2": 0.7761128650974771,
+            "3": 1.1835994730488633,
+            "4": 0.5892416542614738
+          },
+          "raw": {
+            "centroid_uv_px": 3.9615268364600102,
+            "area_px": 220.49810606060606,
+            "force_sdk": 0.16331998745536294
+          }
+        },
+        "linear": {
+          "normalized_mae": 0.7072260327106404,
+          "fold_mae": {
+            "1": 0.8357215891204409,
+            "2": 0.4812203713829439,
+            "3": 1.052682745604186,
+            "4": 0.6217962662648178
+          },
+          "raw": {
+            "centroid_uv_px": 2.716115948547928,
+            "area_px": 219.95659999827637,
+            "force_sdk": 0.11324070292646404
+          }
+        },
+        "n": 22,
+        "groups": 22,
+        "wins": {
+          "static": 19,
+          "near_action": 17,
+          "linear": 11
+        },
+        "uncertainty_gate": {
+          "n": 22,
+          "graph": 0.6717808192961129,
+          "static": 0.9462932427679559,
+          "near_action": 0.8844931557983323,
+          "linear": 0.7072260327106404
+        }
+      },
+      "state_only_mae": 0.7528793189584108
+    },
+    "trial": {
+      "decision": {
+        "graph": {
+          "n": 95,
+          "scored": 37,
+          "ready_success": 14,
+          "ready_failure": 0,
+          "available_success": 29,
+          "available_fail": 8,
+          "states": {
+            "ready": 31,
+            "recoverable": 35,
+            "Unknown": 29
+          },
+          "n_groups": 73,
+          "logged_transitions": 22,
+          "paired_invoked": 13,
+          "paired_same_sign": 9,
+          "paired_closeness_1mm": 2,
+          "recorded_outcome_for_near": {
+            "None": 2
+          },
+          "action_head_n": 22,
+          "action_head_sign": 15,
+          "action_head_mae": 3.830926357085656
+        },
+        "direct": {
+          "n": 95,
+          "scored": 37,
+          "ready_success": 26,
+          "ready_failure": 2,
+          "available_success": 29,
+          "available_fail": 8,
+          "states": {
+            "ready": 62,
+            "recoverable": 20,
+            "Unknown": 13
+          },
+          "n_groups": 73,
+          "logged_transitions": 22,
+          "paired_invoked": 8,
+          "paired_same_sign": 7,
+          "paired_closeness_1mm": 1,
+          "recorded_outcome_for_near": {
+            "None": 1
+          },
+          "action_head_n": 22,
+          "action_head_sign": 16,
+          "action_head_mae": 3.7448037084910903
+        },
+        "neighbor": {
+          "n": 95,
+          "scored": 37,
+          "ready_success": 18,
+          "ready_failure": 2,
+          "available_success": 29,
+          "available_fail": 8,
+          "states": {
+            "Unknown": 36,
+            "ready": 47,
+            "recoverable": 12
+          },
+          "n_groups": 73,
+          "logged_transitions": 22,
+          "paired_invoked": 4,
+          "paired_same_sign": 4,
+          "paired_closeness_1mm": 0,
+          "recorded_outcome_for_near": {},
+          "action_head_n": 22,
+          "action_head_sign": 16,
+          "action_head_mae": 3.7448037084910903
+        }
+      },
+      "folds": [
+        {
+          "type": "fold",
+          "color": "white",
+          "fold": "0",
+          "tr": 76,
+          "te": 19,
+          "end": {
+            "True": 25,
+            "False": 6
+          },
+          "actions": 17,
+          "blocks_test": [
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/white_a_director_live_0330_20261110/batches/001/A",
+            "campaign_white_a_v4/batch_1_aa3a5a34",
+            "campaign_white_a_v4/batch_2_11d54a12",
+            "campaign_white_a_v4/batch_3_633c6147",
+            "campaign_white_a_v4_fixed5_history/batch_4_09a3e1b4",
+            "campaign_white_a_v4_fixed5_history/batch_6_91578e00"
+          ],
+          "graph_actions": 17,
+          "dynamics": "trained"
+        },
+        {
+          "type": "fold",
+          "color": "white",
+          "fold": "1",
+          "tr": 76,
+          "te": 19,
+          "end": {
+            "True": 25,
+            "False": 6
+          },
+          "actions": 17,
+          "blocks_test": [
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/white_a_director_live_0330_20261110/batches/001/A",
+            "campaign_white_a_v4/batch_1_aa3a5a34",
+            "campaign_white_a_v4/batch_2_11d54a12",
+            "campaign_white_a_v4/batch_3_633c6147",
+            "campaign_white_a_v4_fixed5_history/batch_3_4566554c",
+            "campaign_white_a_v4_fixed5_history/batch_4_09a3e1b4",
+            "campaign_white_a_v4_fixed5_history/batch_6_91578e00"
+          ],
+          "graph_actions": 17,
+          "dynamics": "trained"
+        },
+        {
+          "type": "fold",
+          "color": "white",
+          "fold": "2",
+          "tr": 76,
+          "te": 19,
+          "end": {
+            "True": 22,
+            "False": 6
+          },
+          "actions": 18,
+          "blocks_test": [
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/white_a_director_live_0330_20261110/batches/001/A",
+            "campaign_white_a_v4/batch_1_aa3a5a34",
+            "campaign_white_a_v4/batch_2_11d54a12",
+            "campaign_white_a_v4/batch_3_633c6147",
+            "campaign_white_a_v4_fixed5_history/batch_5_f4ad8ab2",
+            "campaign_white_a_v4_fixed5_history/batch_6_91578e00"
+          ],
+          "graph_actions": 18,
+          "dynamics": "trained"
+        },
+        {
+          "type": "fold",
+          "color": "white",
+          "fold": "3",
+          "tr": 76,
+          "te": 19,
+          "end": {
+            "True": 21,
+            "False": 7
+          },
+          "actions": 18,
+          "blocks_test": [
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/white_a_director_live_0330_20261110/batches/001/A",
+            "campaign_white_a_v4/batch_1_aa3a5a34",
+            "campaign_white_a_v4/batch_2_11d54a12",
+            "campaign_white_a_v4/batch_3_633c6147",
+            "campaign_white_a_v4_fixed5_history/batch_3_4566554c",
+            "campaign_white_a_v4_fixed5_history/batch_5_f4ad8ab2",
+            "campaign_white_a_v4_fixed5_history/batch_6_91578e00"
+          ],
+          "graph_actions": 18,
+          "dynamics": "trained"
+        },
+        {
+          "type": "fold",
+          "color": "white",
+          "fold": "4",
+          "tr": 76,
+          "te": 19,
+          "end": {
+            "True": 23,
+            "False": 7
+          },
+          "actions": 18,
+          "blocks_test": [
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/white_a_director_live_0330_20261110/batches/001/A",
+            "campaign_white_a_v4/batch_1_aa3a5a34",
+            "campaign_white_a_v4/batch_2_11d54a12",
+            "campaign_white_a_v4/batch_3_633c6147",
+            "campaign_white_a_v4_fixed5_history/batch_4_09a3e1b4",
+            "campaign_white_a_v4_fixed5_history/batch_6_91578e00"
+          ],
+          "graph_actions": 18,
+          "dynamics": "trained"
+        }
+      ]
+    },
+    "batch6": {
+      "decision": {
+        "graph": {
+          "n": 12,
+          "scored": 7,
+          "ready_success": 4,
+          "ready_failure": 3,
+          "available_success": 4,
+          "available_fail": 3,
+          "states": {
+            "Unknown": 1,
+            "recoverable": 3,
+            "ready": 8
+          },
+          "n_groups": 10,
+          "logged_transitions": 2,
+          "paired_invoked": 2,
+          "paired_same_sign": 2,
+          "paired_closeness_1mm": 0,
+          "recorded_outcome_for_near": {},
+          "action_head_n": 2,
+          "action_head_sign": 2,
+          "action_head_mae": 2.579206832991839
+        },
+        "direct": {
+          "n": 12,
+          "scored": 7,
+          "ready_success": 2,
+          "ready_failure": 2,
+          "available_success": 4,
+          "available_fail": 3,
+          "states": {
+            "recoverable": 5,
+            "Unknown": 2,
+            "ready": 5
+          },
+          "n_groups": 10,
+          "logged_transitions": 2,
+          "paired_invoked": 2,
+          "paired_same_sign": 2,
+          "paired_closeness_1mm": 0,
+          "recorded_outcome_for_near": {},
+          "action_head_n": 2,
+          "action_head_sign": 2,
+          "action_head_mae": 2.1148571746182987
+        },
+        "neighbor": {
+          "n": 12,
+          "scored": 7,
+          "ready_success": 2,
+          "ready_failure": 2,
+          "available_success": 4,
+          "available_fail": 3,
+          "states": {
+            "Unknown": 5,
+            "recoverable": 2,
+            "ready": 5
+          },
+          "n_groups": 10,
+          "logged_transitions": 2,
+          "paired_invoked": 1,
+          "paired_same_sign": 1,
+          "paired_closeness_1mm": 0,
+          "recorded_outcome_for_near": {},
+          "action_head_n": 2,
+          "action_head_sign": 2,
+          "action_head_mae": 2.1148571746182987
+        }
+      },
+      "folds": [
+        {
+          "type": "fold",
+          "color": "white",
+          "fold": "batch6",
+          "tr": 83,
+          "te": 12,
+          "end": {
+            "True": 25,
+            "False": 5
+          },
+          "actions": 20,
+          "blocks_test": [
+            "campaign_white_a_v4_fixed5_history/batch_6_91578e00"
+          ],
+          "graph_actions": 20,
+          "dynamics": "trained"
+        }
+      ],
+      "native": {
+        "graph": {
+          "normalized_mae": 0.6758576274596007,
+          "fold_mae": {
+            "batch6": 0.6758576274596007
+          },
+          "raw": {
+            "centroid_uv_px": 3.3686498345418814,
+            "area_px": 256.0643941428043,
+            "force_sdk": 0.10377208529233417
+          }
+        },
+        "static": {
+          "normalized_mae": 0.8571288546664297,
+          "fold_mae": {
+            "batch6": 0.8571288546664297
+          },
+          "raw": {
+            "centroid_uv_px": 7.868860701483486,
+            "area_px": 445.875,
+            "force_sdk": 0.10295112997603914
+          }
+        },
+        "near_action": {
+          "normalized_mae": 0.8498599288586282,
+          "fold_mae": {
+            "batch6": 0.8498599288586282
+          },
+          "raw": {
+            "centroid_uv_px": 3.7343183612407005,
+            "area_px": 195.2,
+            "force_sdk": 0.17178079214306008
+          }
+        },
+        "linear": {
+          "normalized_mae": 0.7706612300441258,
+          "fold_mae": {
+            "batch6": 0.7706612300441258
+          },
+          "raw": {
+            "centroid_uv_px": 5.260234280371735,
+            "area_px": 316.97028499257675,
+            "force_sdk": 0.08662857260303507
+          }
+        },
+        "n": 2,
+        "groups": 2,
+        "wins": {
+          "static": 2,
+          "near_action": 2,
+          "linear": 2
+        },
+        "uncertainty_gate": {
+          "n": 2,
+          "graph": 0.6758576274596007,
+          "static": 0.8571288546664297,
+          "near_action": 0.8498599288586282,
+          "linear": 0.7706612300441258
+        }
+      },
+      "measured": {
+        "graph": {
+          "normalized_mae": 0.6819802791769138,
+          "fold_mae": {
+            "batch6": 0.6819802791769138
+          },
+          "raw": {
+            "centroid_uv_px": 3.695459395407992,
+            "area_px": 254.29567636673102,
+            "force_sdk": 0.10283341251375347
+          }
+        },
+        "static": {
+          "normalized_mae": 0.8571288546664297,
+          "fold_mae": {
+            "batch6": 0.8571288546664297
+          },
+          "raw": {
+            "centroid_uv_px": 7.868860701483486,
+            "area_px": 445.875,
+            "force_sdk": 0.10295112997603914
+          }
+        },
+        "near_action": {
+          "normalized_mae": 0.8636133445966832,
+          "fold_mae": {
+            "batch6": 0.8636133445966832
+          },
+          "raw": {
+            "centroid_uv_px": 4.302398407095367,
+            "area_px": 225.60000000000002,
+            "force_sdk": 0.16429037311754657
+          }
+        },
+        "linear": {
+          "normalized_mae": 0.7241700080705633,
+          "fold_mae": {
+            "batch6": 0.7241700080705633
+          },
+          "raw": {
+            "centroid_uv_px": 3.902841322296292,
+            "area_px": 273.5136865121204,
+            "force_sdk": 0.08836043025790147
+          }
+        },
+        "n": 2,
+        "groups": 2,
+        "wins": {
+          "static": 2,
+          "near_action": 2,
+          "linear": 1
+        },
+        "uncertainty_gate": {
+          "n": 2,
+          "graph": 0.6819802791769138,
+          "static": 0.8571288546664297,
+          "near_action": 0.8636133445966832,
+          "linear": 0.7241700080705633
+        }
+      }
+    }
+  },
+  "green": {
+    "offset": {
+      "est": {
+        "n": 94,
+        "groups": 84,
+        "correct_sign": 94,
+        "plus": 49,
+        "mae": 0.4857661658458734,
+        "bias": -0.07822828342092635,
+        "p90": 1.0797161582564736,
+        "zero": 6.486177480858836
+      },
+      "diagnostic": {
+        "n": 114,
+        "groups": 89,
+        "correct_sign": 114,
+        "plus": 51,
+        "mae": 0.7038955147282865,
+        "bias": -0.3439049425551621,
+        "p90": 1.3292213272534013,
+        "zero": 6.578783447008017
+      },
+      "all": 114,
+      "reject_windows": {
+        "edge": 20
+      },
+      "by_campaign": {
+        "": [
+          94,
+          114
+        ]
+      }
+    },
+    "cv": {
+      "decision": {
+        "graph": {
+          "n": 389,
+          "scored": 252,
+          "ready_success": 222,
+          "ready_failure": 3,
+          "available_success": 235,
+          "available_fail": 17,
+          "states": {
+            "Unknown": 25,
+            "ready": 338,
+            "recoverable": 26
+          },
+          "n_groups": 275,
+          "logged_transitions": 114,
+          "paired_invoked": 7,
+          "paired_same_sign": 7,
+          "paired_closeness_1mm": 5,
+          "recorded_outcome_for_near": {
+            "None": 4,
+            "True": 1
+          },
+          "action_head_n": 114,
+          "action_head_sign": 112,
+          "action_head_mae": 1.1586085603924883
+        },
+        "direct": {
+          "n": 389,
+          "scored": 252,
+          "ready_success": 230,
+          "ready_failure": 15,
+          "available_success": 235,
+          "available_fail": 17,
+          "states": {
+            "Unknown": 23,
+            "ready": 363,
+            "recoverable": 3
+          },
+          "n_groups": 275,
+          "logged_transitions": 114,
+          "paired_invoked": 2,
+          "paired_same_sign": 2,
+          "paired_closeness_1mm": 1,
+          "recorded_outcome_for_near": {
+            "None": 1
+          },
+          "action_head_n": 114,
+          "action_head_sign": 112,
+          "action_head_mae": 1.124167971067881
+        },
+        "neighbor": {
+          "n": 389,
+          "scored": 252,
+          "ready_success": 218,
+          "ready_failure": 3,
+          "available_success": 235,
+          "available_fail": 17,
+          "states": {
+            "Unknown": 67,
+            "ready": 321,
+            "recoverable": 1
+          },
+          "n_groups": 275,
+          "logged_transitions": 114,
+          "paired_invoked": 1,
+          "paired_same_sign": 1,
+          "paired_closeness_1mm": 0,
+          "recorded_outcome_for_near": {},
+          "action_head_n": 114,
+          "action_head_sign": 112,
+          "action_head_mae": 1.124167971067881
+        }
+      },
+      "folds": [
+        {
+          "type": "fold",
+          "color": "green",
+          "fold": "0",
+          "tr": 310,
+          "te": 79,
+          "end": {
+            "True": 205,
+            "False": 17
+          },
+          "actions": 68,
+          "blocks_test": [
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/e1e2_B_formal01",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00016",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00036",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00040"
+          ],
+          "graph_actions": 67,
+          "dynamics": "trained"
+        },
+        {
+          "type": "fold",
+          "color": "green",
+          "fold": "1",
+          "tr": 311,
+          "te": 78,
+          "end": {
+            "True": 178
+          },
+          "actions": 113,
+          "blocks_test": [
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/e1e2_A_formal01",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00013",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00034",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00043"
+          ],
+          "graph_actions": 112,
+          "dynamics": "trained"
+        },
+        {
+          "type": "fold",
+          "color": "green",
+          "fold": "2",
+          "tr": 312,
+          "te": 77,
+          "end": {
+            "True": 189,
+            "False": 17
+          },
+          "actions": 92,
+          "blocks_test": [
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00001",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00006",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00007",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00014",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00020",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00024",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00025",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00027",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00029",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00032",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00044",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00045",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00046",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00047",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00052",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00053",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00055"
+          ],
+          "graph_actions": 91,
+          "dynamics": "trained"
+        },
+        {
+          "type": "fold",
+          "color": "green",
+          "fold": "3",
+          "tr": 312,
+          "te": 77,
+          "end": {
+            "True": 185,
+            "False": 17
+          },
+          "actions": 91,
+          "blocks_test": [
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00004",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00005",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00008",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00010",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00011",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00019",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00022",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00026",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00035",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00038",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00041",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00048",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00049",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00051",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00054",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00056",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00058"
+          ],
+          "graph_actions": 91,
+          "dynamics": "trained"
+        },
+        {
+          "type": "fold",
+          "color": "green",
+          "fold": "4",
+          "tr": 311,
+          "te": 78,
+          "end": {
+            "True": 183,
+            "False": 17
+          },
+          "actions": 92,
+          "blocks_test": [
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00002",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00003",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00009",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00012",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00015",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00017",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00018",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00021",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00023",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00028",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00030",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00031",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00033",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00037",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00039",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00042",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00050",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00057"
+          ],
+          "graph_actions": 92,
+          "dynamics": "trained"
+        }
+      ],
+      "native": {
+        "graph": {
+          "normalized_mae": 0.48074071143714564,
+          "fold_mae": {
+            "0": 0.6231321600875674,
+            "1": 0.3118003721417979,
+            "2": 0.3423524057877443,
+            "3": 0.39625540664852305,
+            "4": 0.41740609488265007
+          },
+          "raw": {
+            "centroid_uv_px": 4.056810677798051,
+            "area_px": 89.7773064699333,
+            "force_sdk": 0.06677007566973518
+          }
+        },
+        "static": {
+          "normalized_mae": 0.9099233793348294,
+          "fold_mae": {
+            "0": 0.8420446812133126,
+            "1": 0.7014857197442755,
+            "2": 1.0170348033413266,
+            "3": 0.9311742166494391,
+            "4": 0.9319977969167097
+          },
+          "raw": {
+            "centroid_uv_px": 13.836958661165436,
+            "area_px": 219.13377192982455,
+            "force_sdk": 0.0944151623733148
+          }
+        },
+        "near_action": {
+          "normalized_mae": 0.6178721580141591,
+          "fold_mae": {
+            "0": 0.7738295471636941,
+            "1": 0.40165240290397,
+            "2": 0.49401123368118915,
+            "3": 0.4858963109742253,
+            "4": 0.5634432794448588
+          },
+          "raw": {
+            "centroid_uv_px": 3.023191887065721,
+            "area_px": 119.96184210526314,
+            "force_sdk": 0.0997909179437535
+          }
+        },
+        "linear": {
+          "normalized_mae": 0.42540215323216324,
+          "fold_mae": {
+            "0": 0.5547672580895626,
+            "1": 0.30982940910151907,
+            "2": 0.3164268890559832,
+            "3": 0.34531824630450875,
+            "4": 0.35286413468226724
+          },
+          "raw": {
+            "centroid_uv_px": 2.671461410047091,
+            "area_px": 77.39605524693576,
+            "force_sdk": 0.05352585191295763
+          }
+        },
+        "n": 114,
+        "groups": 89,
+        "wins": {
+          "static": 96,
+          "near_action": 82,
+          "linear": 35
+        },
+        "uncertainty_gate": {
+          "n": 85,
+          "graph": 0.4166474847804211,
+          "static": 0.8606703711909208,
+          "near_action": 0.5216425063724198,
+          "linear": 0.3633300749261162
+        }
+      },
+      "measured": {
+        "graph": {
+          "normalized_mae": 0.4826438839321677,
+          "fold_mae": {
+            "0": 0.6242115247409223,
+            "1": 0.3056712720460696,
+            "2": 0.3498333176040438,
+            "3": 0.39666371810359774,
+            "4": 0.41738194793031413
+          },
+          "raw": {
+            "centroid_uv_px": 4.0425821915225955,
+            "area_px": 88.57886974049057,
+            "force_sdk": 0.0673667657231011
+          }
+        },
+        "static": {
+          "normalized_mae": 0.9099233793348294,
+          "fold_mae": {
+            "0": 0.8420446812133126,
+            "1": 0.7014857197442755,
+            "2": 1.0170348033413266,
+            "3": 0.9311742166494391,
+            "4": 0.9319977969167097
+          },
+          "raw": {
+            "centroid_uv_px": 13.836958661165436,
+            "area_px": 219.13377192982455,
+            "force_sdk": 0.0944151623733148
+          }
+        },
+        "near_action": {
+          "normalized_mae": 0.616811590266053,
+          "fold_mae": {
+            "0": 0.7621183144779272,
+            "1": 0.48240561498489737,
+            "2": 0.46341701392346424,
+            "3": 0.5457265374077709,
+            "4": 0.5468085701211614
+          },
+          "raw": {
+            "centroid_uv_px": 3.1923223168944492,
+            "area_px": 121.53026315789474,
+            "force_sdk": 0.09659213887014693
+          }
+        },
+        "linear": {
+          "normalized_mae": 0.4242272162246485,
+          "fold_mae": {
+            "0": 0.5545489577481194,
+            "1": 0.306543574349186,
+            "2": 0.31520782286310883,
+            "3": 0.3424684747519819,
+            "4": 0.35157999984378524
+          },
+          "raw": {
+            "centroid_uv_px": 2.622674960505257,
+            "area_px": 77.48892795189055,
+            "force_sdk": 0.05334853206157139
+          }
+        },
+        "n": 114,
+        "groups": 89,
+        "wins": {
+          "static": 96,
+          "near_action": 85,
+          "linear": 33
+        },
+        "uncertainty_gate": {
+          "n": 85,
+          "graph": 0.42453345697588407,
+          "static": 0.8855096949125307,
+          "near_action": 0.5310193607502338,
+          "linear": 0.36259755588812276
+        }
+      },
+      "state_only_mae": 0.495492068033037
+    },
+    "trial": {
+      "decision": {
+        "graph": {
+          "n": 389,
+          "scored": 252,
+          "ready_success": 223,
+          "ready_failure": 3,
+          "available_success": 235,
+          "available_fail": 17,
+          "states": {
+            "recoverable": 24,
+            "ready": 348,
+            "Unknown": 17
+          },
+          "n_groups": 275,
+          "logged_transitions": 114,
+          "paired_invoked": 7,
+          "paired_same_sign": 7,
+          "paired_closeness_1mm": 7,
+          "recorded_outcome_for_near": {
+            "None": 7
+          },
+          "action_head_n": 114,
+          "action_head_sign": 114,
+          "action_head_mae": 0.5096292213335465
+        },
+        "direct": {
+          "n": 389,
+          "scored": 252,
+          "ready_success": 228,
+          "ready_failure": 4,
+          "available_success": 235,
+          "available_fail": 17,
+          "states": {
+            "recoverable": 20,
+            "ready": 352,
+            "Unknown": 17
+          },
+          "n_groups": 275,
+          "logged_transitions": 114,
+          "paired_invoked": 6,
+          "paired_same_sign": 6,
+          "paired_closeness_1mm": 6,
+          "recorded_outcome_for_near": {
+            "None": 6
+          },
+          "action_head_n": 114,
+          "action_head_sign": 114,
+          "action_head_mae": 0.5296457326148326
+        },
+        "neighbor": {
+          "n": 389,
+          "scored": 252,
+          "ready_success": 217,
+          "ready_failure": 2,
+          "available_success": 235,
+          "available_fail": 17,
+          "states": {
+            "recoverable": 20,
+            "Unknown": 43,
+            "ready": 326
+          },
+          "n_groups": 275,
+          "logged_transitions": 114,
+          "paired_invoked": 7,
+          "paired_same_sign": 7,
+          "paired_closeness_1mm": 6,
+          "recorded_outcome_for_near": {
+            "None": 6
+          },
+          "action_head_n": 114,
+          "action_head_sign": 114,
+          "action_head_mae": 0.5296457326148326
+        }
+      },
+      "folds": [
+        {
+          "type": "fold",
+          "color": "green",
+          "fold": "0",
+          "tr": 311,
+          "te": 78,
+          "end": {
+            "True": 191,
+            "False": 12
+          },
+          "actions": 91,
+          "blocks_test": [
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/e1e2_A_formal01",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/e1e2_B_formal01",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00001",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00002",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00003",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00004",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00005",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00008",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00009",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00011",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00013",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00014",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00019",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00023",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00024",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00025",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00026",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00027",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00028",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00029",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00030",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00035",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00037",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00038",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00040",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00045",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00047",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00049",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00050",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00051",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00052",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00053",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00054",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00056"
+          ],
+          "graph_actions": 90,
+          "dynamics": "trained"
+        },
+        {
+          "type": "fold",
+          "color": "green",
+          "fold": "1",
+          "tr": 311,
+          "te": 78,
+          "end": {
+            "True": 187,
+            "False": 14
+          },
+          "actions": 91,
+          "blocks_test": [
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/e1e2_A_formal01",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/e1e2_B_formal01",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00002",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00003",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00004",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00006",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00009",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00012",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00014",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00018",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00019",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00024",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00025",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00026",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00027",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00028",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00029",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00035",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00036",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00037",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00039",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00041",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00044",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00045",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00049",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00050",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00051",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00052",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00053",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00057"
+          ],
+          "graph_actions": 90,
+          "dynamics": "trained"
+        },
+        {
+          "type": "fold",
+          "color": "green",
+          "fold": "2",
+          "tr": 311,
+          "te": 78,
+          "end": {
+            "True": 189,
+            "False": 12
+          },
+          "actions": 91,
+          "blocks_test": [
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/e1e2_A_formal01",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/e1e2_B_formal01",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00001",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00002",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00003",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00004",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00007",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00010",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00012",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00014",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00017",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00018",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00021",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00025",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00026",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00027",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00028",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00031",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00033",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00034",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00036",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00039",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00042",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00043",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00046",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00048",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00049",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00050",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00051",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00052",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00054",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00057"
+          ],
+          "graph_actions": 91,
+          "dynamics": "trained"
+        },
+        {
+          "type": "fold",
+          "color": "green",
+          "fold": "3",
+          "tr": 311,
+          "te": 78,
+          "end": {
+            "True": 186,
+            "False": 14
+          },
+          "actions": 91,
+          "blocks_test": [
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/e1e2_A_formal01",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/e1e2_B_formal01",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00001",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00002",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00003",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00004",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00005",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00007",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00010",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00013",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00015",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00016",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00017",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00020",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00021",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00022",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00024",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00025",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00026",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00027",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00028",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00031",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00032",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00033",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00038",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00042",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00043",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00046",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00048",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00049",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00050",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00051",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00052",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00055",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00058"
+          ],
+          "graph_actions": 90,
+          "dynamics": "trained"
+        },
+        {
+          "type": "fold",
+          "color": "green",
+          "fold": "4",
+          "tr": 312,
+          "te": 77,
+          "end": {
+            "True": 187,
+            "False": 16
+          },
+          "actions": 92,
+          "blocks_test": [
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/e1e2_A_formal01",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/e1e2_B_formal01",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00001",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00002",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00003",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00004",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00006",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00008",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00011",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00013",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00015",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00016",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00020",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00022",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00023",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00025",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00026",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00027",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00028",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00030",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00032",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00034",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00037",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00038",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00040",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00044",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00047",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00048",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00049",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00050",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00051",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00052",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00055",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00056",
+            "/home/dm/DM_das/bottle_grasp_experiment/outputs/rsi_contact01/batches/00058"
+          ],
+          "graph_actions": 91,
+          "dynamics": "trained"
+        }
+      ]
+    }
+  }
+}
