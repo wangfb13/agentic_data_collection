@@ -21,7 +21,7 @@ from .ready import FIXED_GOALS, check_fixed_config, fixed_squeeze_lift
 
 def live_window(backend,probe,observation,folder,index,previous,receipt,spec):
     """Same five source frames and per-frame median geometry as offline extraction."""
-    event=capture_window(backend,probe,backend.hw.snapshot(),folder,index,previous,receipt,observation)
+    event=capture_window(backend,probe,backend.hw.snapshot(),folder,index,previous,receipt,observation,modalities=spec['observation']['modalities'])
     from .legacy_v2.contact_geometry import window_contact_geometry
     contacts=[];arrays={};wrenches=[]
     with backend.hw.lock:
@@ -29,18 +29,21 @@ def live_window(backend,probe,observation,folder,index,previous,receipt,spec):
             frames={e.monotonic_ns:e.data for e in backend.hw.dd[side]}
             contacts.append(window_contact_geometry([frames[t] for t in window['frame_ns']],ref,
                             threshold=spec.get('contact_geometry',{}).get('depth_threshold',.022)))
-            encoded={e.monotonic_ns:e.data for e in backend._graph_buffers['dd_encoded_'+side]}
-            if 'tactile_encoder' in spec:arrays[side]=np.stack([encoded[t] for t in window['frame_ns']])
+            if 'tactile_encoder' in spec:
+                encoded={e.monotonic_ns:e.data for e in backend._graph_buffers['dd_encoded_'+side]}
+                arrays[side]=np.stack([encoded[t] for t in window['frame_ns']])
             raw=[e.data for e in backend._graph_buffers['wrench_raw_'+side]
                  if probe['stable_start_ns']<=e.monotonic_ns<=probe['timestamp_ns']]
             if not raw:raise ValueError('No independent wrench frames in the probe window')
             i=0 if side=='left' else 1
             wrenches.extend((np.median(raw,axis=0)-np.asarray(backend.hw.zero['offset_raw'][i])).tolist())
-    image=event['raw_evidence']['wrist']
-    if not image.get('available'):raise ValueError('Current right wrist image unavailable: '+str(image))
-    from .legacy_v2.features import FrozenVision,read_wrist
-    if not hasattr(backend,'_graph_vision'):backend._graph_vision=FrozenVision('cpu',spec['data']['visual_model_directory'])
-    visual=backend._graph_vision.encode(read_wrist({'path':image['path']}))
+    visual=None
+    if 'vis' in spec['observation']['modalities']:
+        image=event['raw_evidence']['wrist']
+        if not image.get('available'):raise ValueError('Current right wrist image unavailable: '+str(image))
+        from .legacy_v2.features import FrozenVision,read_wrist
+        if not hasattr(backend,'_graph_vision'):backend._graph_vision=FrozenVision('cpu',spec['data']['visual_model_directory'])
+        visual=backend._graph_vision.encode(read_wrist({'path':image['path']}))
     window={'contacts':contacts,'wrench':wrenches,'visual':visual,'tactile_arrays':arrays}
     values={};versions={};feature_evidence={}
     for name,definition in spec['observation']['modalities'].items():
@@ -88,9 +91,29 @@ class GraphRecoveryProxy:
         folders=list(self.backend.output_dir.glob('invocation_*'))
         folder=max(folders,key=lambda p:p.stat().st_mtime_ns)
         self.window,row=live_window(self.backend,self.backend._graph_probe,observation,folder,self.index,self.previous,applied_action,self.spec)
-        self.window['repeat_context']=digest([self.request.get('campaign'),self.backend.T0.tolist(),self.window['attrs'].get('sensor_version'),self.backend.config.get('hardware_config_sha256')])
+        local=getattr(self.backend,'contact_reference',None)
+        if local:
+            settings=self.backend.local_settings
+            self.window['repeat_context']=digest([local['reference_digest'],settings['sensor_version'],
+                settings['tool_version'],settings.get('placement_approach_group') or str(folder),
+                settings.get('repeat_setup_id') or str(folder),self.window['unloaded_reference_id'] if not settings.get('repeat_setup_id') else None])
+            observation.update(observation_id=row['node_id'])
+            self.backend.current_observation_id=row['node_id']
+            self.backend.current_observation_ns=observation['timestamp_ns']
+            self.backend.current_observation_pose=np.asarray(self.window['measured_tcp_mm']).copy()
+        else:
+            self.window['repeat_context']=digest([self.request.get('campaign'),self.backend.T0.tolist(),self.window['attrs'].get('sensor_version'),self.backend.config.get('hardware_config_sha256')])
         self.window['campaign_request']={k:self.request.get(k) for k in ('trial_id','role','model_id','frozen_model_id','post_freeze','rule_id')}
         self.previous=row['node_id']
+        if local:
+            from .local_decision import decide_local
+            state,reason,cmd,prediction=decide_local(self.backend,observation,row,self.runtime,self.index)
+            self.index+=1
+            self.window['offset_prediction']=prediction.get('offset_estimate')
+            self.window['action_source']=self.backend.action_source
+            report=self._outputs(state,reason,cmd,prediction)
+            report['exit']['post_condition']=self.spec['active_post_condition']
+            return report
         if self.mode=='planned':
             actions=self.request.get('actions',[])
             action=normalize_action(actions[self.index],self.spec) if self.index<len(actions) else None
@@ -132,11 +155,22 @@ def install_backend(backend,settings):
     if backend._graph_consumer['params']['closure_floor']!=expected['params']['closure_floor']:raise ValueError('Different downstream closure floor')
     backend.single_correction_open_handoff=False
     backend.recovery=GraphRecoveryProxy(backend,request,spec)
+    if getattr(backend,'contact_reference',None):
+        skill=backend.recovery
+        ref=backend.contact_reference
+        skill.model={'schema':'fixed_contact_a_v1','target_definition_id':ref['target_definition_id']}
+        skill.model_sha256=digest([ref['reference_digest'],skill.model_id,backend.action_source,
+            backend.offset_policy.fit['integrity_sha256'] if backend.offset_policy else None,
+            backend.local_settings['gain'],backend.local_settings['offset_deadband_mm'],backend.cfg['servo']])
+        skill.model_id=skill.model_sha256[:24]
+        skill.config={**skill.config,'max_observation_age_s':backend.local_settings['observation_max_age_s'],
+                      'target':{'min_stable_duration_s':backend.cfg['force']['probe_stable_s']}}
     # Load frozen encoders before prepare() opens sensors or grants control.
-    from .legacy_v2.features import FrozenVision
-    import torch
-    torch.set_num_threads(int(settings.get('cpu_threads',4)))
-    backend._graph_vision=FrozenVision('cpu',spec['data']['visual_model_directory'])
+    if 'vis' in spec['observation']['modalities']:
+        from .legacy_v2.features import FrozenVision
+        import torch
+        torch.set_num_threads(int(settings.get('cpu_threads',4)))
+        backend._graph_vision=FrozenVision('cpu',spec['data']['visual_model_directory'])
     if 'tactile_encoder' in spec:
         from bottle_scan.state_graph.modalities.tactile_embedding import FrozenEncoder,_ENCODERS,digest as encoder_digest
         encoder=FrozenEncoder(spec['tactile_encoder']);encoder._load()

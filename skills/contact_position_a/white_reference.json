@@ -1,0 +1,222 @@
+{
+  "schema": "fixed_contact_reference_v1",
+  "version": 1,
+  "target_definition_id": "white_bottle_a_contact_target_20261110_v1",
+  "object_region": "white bottle sidewall at the accepted nominal bilateral grasp",
+  "finger_order": [
+    "left",
+    "right"
+  ],
+  "supported_axes": [
+    "a"
+  ],
+  "label_semantics": "hand_displacement_from_standard_along_positive_tool_a_mm",
+  "units": "mm",
+  "feature_version": "contact_descriptor_v1",
+  "protocol": {
+    "axes_tcp": {
+      "a": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "c": [
+        0.0,
+        -1.0,
+        0.0
+      ],
+      "l": [
+        1.0,
+        0.0,
+        0.0
+      ]
+    },
+    "arm": "right",
+    "tactile": {
+      "depth_channel": 0,
+      "dd_threshold": 0.022,
+      "edge_pixels": 3,
+      "probe_frames": 5,
+      "min_area_px": 4
+    },
+    "force": {
+      "unit": "sdk",
+      "normal_axis": 2,
+      "normal_signs": [
+        -1.0,
+        -1.0
+      ],
+      "target": 5.0,
+      "probe_fraction": 0.3,
+      "probe_tolerance": 0.25,
+      "probe_stable_s": 0.2
+    }
+  },
+  "standard_sample": {
+    "source": "outputs/white_a_current_x5_20261110/session_meta.json",
+    "meta_sha256": "e6a667e2e23d630703c8dfcf3181e13d84a29c6cd820385888e0755364075f6c",
+    "timestamp_ns": 1881349300138134,
+    "accepted_unix_ns": 1794277714320418341,
+    "descriptors": [
+      {
+        "centroid_px": [
+          52.3740068796644,
+          73.75167031299848
+        ],
+        "cop_px": [
+          52.3740068796644,
+          73.75167031299848
+        ],
+        "geometric_centroid_px": [
+          53.30949105914718,
+          70.74621733149931
+        ],
+        "centroid_mm": null,
+        "area_px": 1454,
+        "area_mm2": null,
+        "depth_weight_sum": 129.93240404129028,
+        "max_depth": 0.18694114685058594,
+        "edge_fraction": 0.0,
+        "edge_area_fraction": 0.0,
+        "second_moment_px2": [
+          [
+            87.90582415824974,
+            -49.16017471475639
+          ],
+          [
+            -49.16017471475639,
+            108.2641275783583
+          ]
+        ],
+        "contact": true,
+        "pixel_pitch_available": false,
+        "cop_definition": "positive_reference_subtracted_depth_weighted_proxy",
+        "bbox_xyxy_px": [
+          27,
+          44,
+          73,
+          92
+        ],
+        "edge_sides": {
+          "left": false,
+          "right": false,
+          "top": false,
+          "bottom": false
+        },
+        "touches_edge": false,
+        "principal_angle_deg": -50.849200347473925,
+        "shape_hw": [
+          96,
+          128
+        ],
+        "valid": true,
+        "dd_pool_4x4": [
+          [
+            3.515183925628662e-05,
+            0.0004414642850557963,
+            0.0010800597568353016,
+            0.00023570905129114786
+          ],
+          [
+            0.000841320181886355,
+            0.0013137149314085643,
+            0.003495981295903524,
+            0.0015556650857130687
+          ],
+          [
+            0.00019536291559537253,
+            0.05064276854197184,
+            0.017395527412494022,
+            8.855263392130534e-05
+          ],
+          [
+            0.0035342052578926086,
+            0.09690821046630542,
+            0.0051434387763341265,
+            0.00032751820981502533
+          ]
+        ]
+      },
+      {
+        "centroid_px": [
+          46.20319204443076,
+          26.773902656686086
+        ],
+        "cop_px": [
+          46.20319204443076,
+          26.773902656686086
+        ],
+        "geometric_centroid_px": [
+          46.626196172248804,
+          28.238636363636363
+        ],
+        "centroid_mm": null,
+        "area_px": 1672,
+        "area_mm2": null,
+        "depth_weight_sum": 143.96917629241943,
+        "max_depth": 0.18699264526367188,
+        "edge_fraction": 0.0,
+        "edge_area_fraction": 0.0,
+        "second_moment_px2": [
+          [
+            107.30924315709291,
+            49.90436367982383
+          ],
+          [
+            49.90436367982383,
+            106.88402511001593
+          ]
+        ],
+        "contact": true,
+        "pixel_pitch_available": false,
+        "cop_definition": "positive_reference_subtracted_depth_weighted_proxy",
+        "bbox_xyxy_px": [
+          21,
+          6,
+          70,
+          54
+        ],
+        "edge_sides": {
+          "left": false,
+          "right": false,
+          "top": false,
+          "bottom": false
+        },
+        "touches_edge": false,
+        "principal_angle_deg": 44.877951293860974,
+        "shape_hw": [
+          96,
+          128
+        ],
+        "valid": true,
+        "dd_pool_4x4": [
+          [
+            0.013157305618127188,
+            0.06524482493599255,
+            0.00025910139083862305,
+            0.00038676708936691284
+          ],
+          [
+            0.005448921273152034,
+            0.0944241334994634,
+            0.009157460182905197,
+            0.0016942744453748066
+          ],
+          [
+            0.0009571090340614319,
+            0.00671192134420077,
+            0.0011470367511113484,
+            0.0016759211818377178
+          ],
+          [
+            0.0021187240878740945,
+            0.0006171303490797678,
+            0.002304947624603907,
+            0.00027218212683995563
+          ]
+        ]
+      }
+    ]
+  },
+  "reference_digest": "c31e23df624c8e23e2cf2030215cdf941c722bcd0367784cf383baa586a7518c"
+}

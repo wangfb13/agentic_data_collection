@@ -1,0 +1,14 @@
+{
+  "survey_id": null,
+  "finger_serials": {"left": null, "right": null},
+  "tcp_definition": "live TF arm_right_7_link -> right_gripper_base_link",
+  "sensor_version": null,
+  "tool_version": null,
+  "reference_digest": "c31e23df624c8e23e2cf2030215cdf941c722bcd0367784cf383baa586a7518c",
+  "probe_protocol_and_finger_order_verified": false,
+  "full_open_tool_clearance_verified": false,
+  "tcp_min_base_mm": [null, null, null],
+  "tcp_max_base_mm": [null, null, null],
+  "allowed_rotations": [],
+  "orientation_tolerance_deg": 1.0
+}

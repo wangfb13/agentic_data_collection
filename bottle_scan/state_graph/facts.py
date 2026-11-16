@@ -27,6 +27,19 @@ def shared_ready_regions(rows,clusters,spec,var,cid):
     return ready
 
 
+def coordinate_evidence(row, variable):
+    provenance=row.get('provenance',{})
+    if provenance.get('coordinate_schema')=='fixed_contact_a_v1':
+        label=provenance.get('supervision') or {}
+        if (variable!='a_offset_mm' or label.get('source') not in
+                ('independent_offset_measurement','measured_local_standard_tcp') or not label.get('evidence_id')):
+            return None
+        value=label.get('offset_a_mm')
+    else:
+        value=row.get('plan_coords',{}).get(variable)
+    return value if type(value) in (int,float) and np.isfinite(value) else None
+
+
 def generate_facts(graph,rows,labels,clusters,noise,spec,models=None):
     facts=[];active=spec['active_post_condition']
     if any(m['status']!='ready' for m in noise['modalities'].values()):
@@ -42,7 +55,7 @@ def generate_facts(graph,rows,labels,clusters,noise,spec,models=None):
         for rule,members in rules.items():
             if all(r['post'][cid]['success'] for r in members):facts.append(fact('no_failure',[rule,cid],[r['node_id'] for r in members],{'terminal_count':len(members)}))
         for var,definition in variables.items():
-            actual=[(r,r.get('plan_coords',{}).get(var)) for r in terminal]
+            actual=[(r,coordinate_evidence(r,var)) for r in terminal]
             if definition['kind']=='continuous':
                 actual=[(r,x) for r,x in actual if isinstance(x,(int,float)) and np.isfinite(x)];ref=definition.get('reference',0)
                 for side,condition in [('negative',lambda x:x<ref),('positive',lambda x:x>ref),('reference',lambda x:x==ref)]:
@@ -56,7 +69,7 @@ def generate_facts(graph,rows,labels,clusters,noise,spec,models=None):
                         facts.append(fact('boundary_gap',[var,[x,y],cid],[a['node_id'],b['node_id']],{'gap':y-x,'nominal_step':step,**({('gap_'+definition['unit']):y-x} if definition.get('unit') else {})}))
             counts=defaultdict(list)
             for r in rows:
-                value=r.get('plan_coords',{}).get(var) if definition['kind']=='continuous' else r['attrs'].get(var)
+                value=coordinate_evidence(r,var) if definition['kind']=='continuous' else r['attrs'].get(var)
                 if value is not None:counts[str(value)].append(r['node_id'])
             facts.append(fact('coverage',[var,cid],[i for ids in counts.values() for i in ids],{'values':list(counts),'observed_counts':{v:len(ids) for v,ids in counts.items()},'terminal_counts':{v:sum(byid[i]['is_terminal'] and byid[i]['post'][cid]['evaluated'] for i in ids) for v,ids in counts.items()}}))
         for cluster in clusters['clusters']:

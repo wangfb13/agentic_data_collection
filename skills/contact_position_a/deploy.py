@@ -17,10 +17,13 @@ def main(argv=None):
     model=state.get('model') if a.candidate else state.get('frozen')
     if not model or not model.get('trained'):raise ValueError('No trained selected model. Complete collection first; --candidate selects development only.')
     out=Path(a.out).resolve() if a.out else campaign/'deployment';out.mkdir(parents=True,exist_ok=True)
+    from .ready import FIXED_GOALS
+    if a.entry=='task' and spec['active_post_condition'] in FIXED_GOALS:
+        raise ValueError('Natural main-policy handoff requires a ForcePolicy post-condition; fixed squeeze uses skill entry')
     if a.entry=='task' and a.offset_mm:raise ValueError('Natural main-policy entry does not inject offsets')
     request={'schema':'graph_trial_request_v4','trial_id':'deployment','campaign':str(campaign),'spec':str(campaign/'spec.json'),
-             'role':'deployment','mode':'learned','model_id':model['model_id'],'model_bundle':model['bundle'],
-             'settings':{'a_offset_mm':a.offset_mm,'closure_floor':.33,'l_offset_mm':0,'approach_pose':'pose_0'},
+             'role':'deployment','post_condition':spec['active_post_condition'],'mode':'learned','model_id':model['model_id'],'model_bundle':model['bundle'],
+             'settings':{} if a.entry=='task' else {'a_offset_mm':a.offset_mm},
              'block':{},'actions':[],'post_freeze':not a.candidate,'frozen_model_id':None if a.candidate else model['model_id']}
     atomic(out/'request.json',request);command,env=launch_request(request,out,spec,cfg)
     if a.entry=='task':env.pop('CONTACT_EXPERIMENT_B_OFFSET_MM',None)

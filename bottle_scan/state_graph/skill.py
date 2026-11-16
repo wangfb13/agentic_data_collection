@@ -53,7 +53,7 @@ class SymbolicRecoverySkill:
     def __init__(self,bundle,clusters=None):
         self.bundle=bundle;self.spec=bundle['spec'];self.clusters=clusters;self.events=[]
 
-    def infer(self,row):
+    def infer(self,row,*,readiness_only=False):
         model_observation(row,self.spec['observation']['modalities'])
         cid=self.spec['active_post_condition'];condition=post_spec(self.spec,cid)
         models=self.bundle['models'][cid];v=predict_value(models['V'],row,self.bundle['noise'])
@@ -73,6 +73,9 @@ class SymbolicRecoverySkill:
         ready=(any(s[1]=='ready' for s in support) and beta is not None and beta>=cfg.get('exit_classifier_p',.5)
                and v['p_hat']>=condition.get('ready_p',.8))
         if ready:return {'state':'ready','value':v,'policy':None,'plan':None,'support':support}
+        if readiness_only:
+            return {'state':'not_ready' if support else 'Unknown','value':v,'support':support,
+                    'reason':'post_condition_not_confirmed' if support else 'outside_ready_model_support'}
         supported=any(s[1]=='recoverable' for s in support)
         if not supported or invocation is None or invocation<cfg.get('invocation_classifier_p',.5):
             return {'state':'Unknown','reason':'no_supported_recovery','value':v,'policy':None,'support':support}

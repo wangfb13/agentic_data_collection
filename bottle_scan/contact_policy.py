@@ -452,7 +452,7 @@ def _write(model, out):
     return model
 
 
-def train_contact_policy(roots, settings=None, *, out=None, execution_config=None):
+def train_contact_policy(roots, settings=None, *, out=None, execution_config=None, contact_reference=None, label_manifest=None):
     """Return a sealed JSON model; insufficient evidence remains unusable for B.
 
     The exact trained weights are evaluated on held-out data and saved without
@@ -463,7 +463,15 @@ def train_contact_policy(roots, settings=None, *, out=None, execution_config=Non
     roots = [roots] if isinstance(roots, (str, Path)) else list(roots)
     sessions, rows, load_issues = _load(roots, settings)
     training_sessions = [s for s in sessions if s['role'] not in FINAL_ROLES]
-    issues, compatibility = _compatibility(training_sessions, settings)
+    if contact_reference is not None:
+        from skills.contact_position_a.contact_reference import local_training_sessions
+        if cfg['include_successful_B']:
+            raise ValueError('B actions cannot supervise fixed-reference offsets')
+        local_training_sessions(training_sessions, contact_reference, label_manifest)
+        issues, compatibility = [], {'reference_digest': contact_reference['reference_digest'],
+                                     'sources': label_manifest['measured_A_sessions']}
+    else:
+        issues, compatibility = _compatibility(training_sessions, settings)
     reference = training_sessions[0]['meta'] if training_sessions else {}
     model = {'schema': SCHEMA, 'family': 'numpy_tanh_mlp_ensemble', 'usable_for_B': False,
              'settings': cfg, 'simulated': bool(settings.get('simulate', False)),
@@ -484,7 +492,21 @@ def train_contact_policy(roots, settings=None, *, out=None, execution_config=Non
                          'Digest detects artifact changes; it is not a cryptographic signature of a trusted author.']}
     if model['blocking_reasons']:
         return _write(_seal(model), out)
-    observations, excluded = _observations(rows, reference, settings)
+    if contact_reference is None:
+        observations, excluded = _observations(rows, reference, settings)
+    else:
+        model.update(reference_T0=None, contact_reference_digest=contact_reference['reference_digest'],
+                     target_definition_id=contact_reference['target_definition_id'],
+                     label_definition='negative measured hand offset relative to witnessed local standard; A only')
+        observations, excluded = [], Counter()
+        for session in training_sessions:
+            subset = [r for r in rows if r['session']==session['path']]
+            found, rejected = _observations(subset, session['meta'], settings)
+            group = label_manifest['measured_A_sessions'][session['metadata_sha256']]['placement_approach_group']
+            for obs in found:
+                obs['canonical_session'] = group
+            observations.extend(found)
+            excluded.update(rejected)
     row_labels = {r['trial_path']: r.get('label') for r in rows}
     usable = []
     for o in observations:
@@ -497,7 +519,9 @@ def train_contact_policy(roots, settings=None, *, out=None, execution_config=Non
             excluded['unmeasured_position_not_policy_supervision'] = excluded.get('unmeasured_position_not_policy_supervision', 0) + 1
             continue
         o = deepcopy(o)
-        o.update(target_action_mm=-o['x_mm'], label_source='A_measured_geometric_return_to_T0_not_optimal')
+        o.update(target_action_mm=-o['x_mm'], label_source=(
+            'A_measured_standard_hand_offset_negated' if contact_reference is not None
+            else 'A_measured_geometric_return_to_T0_not_optimal'))
         usable.append(o)
     if cfg['include_successful_B']:
         B, B_excluded = _B_observations(rows, reference, settings, cfg)
@@ -557,6 +581,8 @@ def train_contact_policy(roots, settings=None, *, out=None, execution_config=Non
             nearest.append(float(np.min(np.sqrt(np.mean((Z[others] - Z[i]) ** 2, axis=1)))))
     radius = max(cfg['ood_min_radius'], float(np.quantile(nearest, .95)) * cfg['ood_radius_multiplier'] if nearest else cfg['ood_min_radius'])
     mae, p90 = float(errors.mean()), float(np.quantile(errors, .9))
+    if contact_reference is not None:
+        model['trained_offset_range_mm'] = [float(-y[train].max()), float(-y[train].min())]
     model.update(networks=networks, scaling={'mean': mean.tolist(), 'scale': scale.tolist(), 'y_scale': y_scale},
                  ood={'training_support': Z[train].tolist(), 'rms_radius': radius,
                       'calibration': 'training-only leave-trial-group-out nearest feature RMS distance'},

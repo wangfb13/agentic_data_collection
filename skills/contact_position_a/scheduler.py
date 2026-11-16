@@ -21,9 +21,9 @@ def consumer_identity():
                       'variant':os.environ.get('RIGHT_FORCE_POLICY_VARIANT')}}
 
 
-def capture_window(backend,probe,sample,folder,index,previous=None,receipt=None,observation=None):
+def capture_window(backend,probe,sample,folder,index,previous=None,receipt=None,observation=None,*,modalities=None):
     folder=Path(folder);camera_result={'available':False};config=backend.config.get('state_graph_recording',{})
-    cameras=getattr(backend.robot,'cameras',{}) or {};preferred=config.get('wrist_camera_key','right_wrist')
+    cameras=(getattr(backend.robot,'cameras',{}) or {}) if modalities is None or 'vis' in modalities else {};preferred=config.get('wrist_camera_key','right_wrist')
     key=preferred if preferred in cameras else next((k for k in cameras if 'right' in k.lower() and 'wrist' in k.lower()),None)
     if key is not None:
         camera=cameras[key]
@@ -38,7 +38,18 @@ def capture_window(backend,probe,sample,folder,index,previous=None,receipt=None,
             camera_result={'available':True,'path':str(image),'camera_key':key,'frame_id':getattr(camera,'latest_frame_id',None),
                            'capture_monotonic_s':getattr(camera,'latest_timestamp',None),'recorded_monotonic_ns':time.monotonic_ns()}
         except (RuntimeError,TimeoutError,AttributeError,ValueError) as exc:camera_result={'available':False,'reason':str(exc),'camera_key':key}
-    p=probe or {};node_id=folder.name+':'+str(index);pose=np.asarray(sample['pose']);T0=np.asarray(backend.T0)
+    p=probe or {};node_id=folder.name+':'+str(index);pose=np.asarray(sample['pose'])
+    ref=getattr(backend,'contact_reference',None)
+    if ref is not None:
+        relation={'coordinate_schema':'fixed_contact_a_v1','target_definition_id':ref['target_definition_id'],
+                  'reference_digest':ref['reference_digest'],'supervision':{'offset_a_mm':None,'source':None,'evidence_id':None},
+                  'plan_coords':{},'a_axis_base':(pose[:3,:3] @ ref['protocol']['axes_tcp']['a']).tolist(),
+                  'supported_axes':['a'],'placement_approach_group':backend.local_settings.get('placement_approach_group'),
+                  'unloaded_reference_id':str(folder/'graph_dd_reference.npz')}
+    else:
+        T0=np.asarray(backend.T0)
+        relation={'T0_mm':T0.tolist(),'a_axis_base':np.asarray(backend.bounds.a).tolist(),
+                  'plan_coords':{'a_offset_mm':float((pose[:3,3]-T0[:3,3])@backend.bounds.a)}}
     # Existing descriptors expose `valid`, not a `contact` flag. Reuse the
     # runtime's measured bilateral/stability decision when supplied.
     if observation is not None:
@@ -54,13 +65,12 @@ def capture_window(backend,probe,sample,folder,index,previous=None,receipt=None,
             'recorded_unix_ns':time.time_ns(),'trial_started_unix_ns':int(folder.name.rsplit('_',1)[-1]) if folder.name.rsplit('_',1)[-1].isdigit() else None,
             'preconditions':{'bilateral_contact':contact_valid},
             'probe':p,'wrench':np.asarray(sample['wrench_zeroed']).reshape(-1).tolist(),'gripper_opening':float(sample['width']),
-            'measured_tcp_mm':pose.tolist(),'T0_mm':T0.tolist(),'a_axis_base':np.asarray(backend.bounds.a).tolist(),
-            'plan_coords':{'a_offset_mm':float((pose[:3,3]-T0[:3,3])@backend.bounds.a)},
+            'measured_tcp_mm':pose.tolist(),**relation,
             'u_executed':None if not receipt else [receipt['action_mm']],'u_receipt':receipt,'previous_node_id':previous,
             'raw_evidence':{'streams':str(folder/'streams.h5'),'dd_reference':str(dd_reference),'wrist':camera_result},
             'attrs':{'mass_class':os.environ.get('CONTACT_GRAPH_MASS_CLASS'),'approach_pose':os.environ.get('CONTACT_GRAPH_APPROACH_POSE'),
                      'sensor_version':os.environ.get('CONTACT_GRAPH_SENSOR_VERSION'),'time_period':os.environ.get('CONTACT_GRAPH_TIME_PERIOD'),
-                     'planned_a_offset_mm':float(os.environ['CONTACT_EXPERIMENT_B_OFFSET_MM']) if os.environ.get('CONTACT_EXPERIMENT_B_OFFSET_MM') else None,'closure_floor':backend.cfg['gripper']['min_normalized'],'gripper_opening':float(sample['width'])},
+                     'planned_a_offset_mm':float(os.environ['CONTACT_EXPERIMENT_B_OFFSET_MM']) if ref is None and os.environ.get('CONTACT_EXPERIMENT_B_OFFSET_MM') else None,'closure_floor':backend.cfg['gripper']['min_normalized'],'gripper_opening':float(sample['width'])},
             'consumer':getattr(backend,'_graph_consumer',None)}
 
 
@@ -142,24 +152,26 @@ def trials_from_events(events,spec):
                                                           'indices':encoded_indices,'times_ns':[int(encoded['times'][i]) for i in encoded_indices]}
                         contacts.append(window_contact_geometry(frames,z[side],threshold=spec.get('contact_geometry',{}).get('depth_threshold',.022)))
             wrench=e['wrench']
-            if not e.get('live_features') and contacts is not None:
+            if not e.get('live_features') and contacts is not None and e.get('raw_evidence',{}).get('streams') and e['probe'].get('window'):
                 with h5py.File(e['raw_evidence']['streams'],'r') as h:
                     vectors=[_median_stream(_stream(h,'wrench_'+side),e['probe']['stable_start_ns'],e['probe']['timestamp_ns'],(6,))[0] for side in ('left','right')]
                     if all(v is not None for v in vectors):wrench=np.concatenate(vectors).tolist()
             if contacts is None:contacts=[{'u_px':d['centroid_px'][0],'v_px':d['centroid_px'][1],'area_px':d['area_px']} for d in descriptors]
             image=e['raw_evidence']['wrist'];zvis=e.get('visual_features')
-            if zvis is None and image.get('available'):
+            if 'vis' in spec['observation']['modalities'] and zvis is None and image.get('available'):
                 from .legacy_v2.features import FrozenVision,read_wrist
                 if vision is None:vision=FrozenVision('cpu',spec['data']['visual_model_directory'])
                 zvis=vision.encode(read_wrist({'path':image['path']}))
             row={k:e.get(k) for k in ('node_id','session','trial_id','group_id','window_index','phase','t_ns','u_executed','u_receipt','previous_node_id','plan_coords','attrs','preconditions')}
+            if 'coordinate_schema' in e:
+                row['provenance'] = {k:e.get(k) for k in ('coordinate_schema','reference_digest','target_definition_id','placement_approach_group','supervision','unloaded_reference_id')}
             rule_id = (e.get('campaign_request') or {}).get('rule_id')
             if rule_id:
                 row['rule_id'] = rule_id
             row.update(recorded_features=e.get('live_features'),is_terminal=e['node_id'] in handoffs,consumer_outcome=outcomes.get(e['node_id']),contacts=contacts,wrench=wrench,visual=zvis,tactile_frames=encoded_references,
                 repeat_settings={'a_offset_mm':e['attrs'].get('planned_a_offset_mm'),'closure_floor':e['attrs'].get('closure_floor'),'approach_pose':e['attrs'].get('approach_pose')},
-                is_reference=e['attrs'].get('planned_a_offset_mm')==0,
-                provenance={**e['raw_evidence'],'repeat_context':e.get('repeat_context',e['session']),'trial_started_unix_ns':e.get('trial_started_unix_ns'),'source_type':'scheduler_episode'},
+                is_reference=e.get('confirmed_standard_contact') is True,
+                provenance={**e['raw_evidence'],**row.get('provenance',{}),'repeat_context':e.get('repeat_context',e['session']),'trial_started_unix_ns':e.get('trial_started_unix_ns'),'source_type':'scheduler_episode'},
                 extractor_versions={k:v['version'] for k,v in spec['observation']['modalities'].items()})
             windows.append(row)
         yield {'session':items[0]['session'],'trial_id':items[0]['trial_id'],'windows':windows}

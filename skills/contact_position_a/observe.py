@@ -35,11 +35,11 @@ def probe_window(trial,spec):
         result={k:row.get(k) for k in ('node_id','session','trial_id','window_index','phase','group_id','previous_node_id','evaluation_only','evaluation_scope','frozen_independent','rule_id')}
         result.update(task_id=category+'|'+spec['task']['action_space']['id'],t_ns=row.get('timestamp_ns'),
             preconditions={'bilateral_contact':row.get('bilateral_contact')},is_terminal=terminal,
-            contacts=[row['sensor_contact_left'],row['sensor_contact_right']],wrench=row['wrench_left']+row['wrench_right'],visual=row['z_vis'],tactile_frames=row.get('frames'),
+            contacts=[row['sensor_contact_left'],row['sensor_contact_right']],wrench=row['wrench_left']+row['wrench_right'],visual=row.get('z_vis'),tactile_frames=row.get('frames'),
             extractor_versions={k:v['version'] for k,v in spec['observation']['modalities'].items()},attrs=attrs,
             plan_coords={'a_offset_mm':row.get('tcp_offset_a'),'l_offset_mm':row.get('tcp_offset_l')},
             repeat_settings={'a_offset_mm':row.get('planned_delta_mm'),'l_offset_mm':0.,'closure_floor':row.get('closure_floor'),'approach_pose':attrs['approach_pose']},
-            is_reference=row.get('planned_delta_mm')==0,
+            is_reference=row.get('confirmed_standard_contact') is True,
             provenance={**row.get('provenance',{}),'source_type':'historical_collector','trial_started_unix_ns':row.get('trial_started_unix_ns'),'original_source_role':row.get('original_source_role',row.get('source_role')),
                         'frames':row.get('frames'),'wrist_frame':row.get('wrist_frame'),'T0_mm':row.get('T0_mm'),'a_axis_base':row.get('a_axis_base')},
             legacy_labels=row.get('original_skill_ground_truth') or {},risk={'normal_force_peak':max(row.get('normal_sdk') or [0]),'contact_lost':False},

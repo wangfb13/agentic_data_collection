@@ -1,0 +1,15 @@
+{
+  "reference_digest": "c31e23df624c8e23e2cf2030215cdf941c722bcd0367784cf383baa586a7518c",
+  "measured_A_sessions": {
+    "e6a667e2e23d630703c8dfcf3181e13d84a29c6cd820385888e0755364075f6c": {
+      "path": "outputs/white_a_current_x5_20261110",
+      "standard_grasp_evidence": "operator accepted bilateral PROBE; original reference session",
+      "placement_approach_group": "white_1110_original_mark_pose0"
+    },
+    "3f75330ccbfdf539fefc5ded0b00b49d6f408366fa4e7e5f4f48ef2a1aa260ac": {
+      "path": "outputs/white_a_current_x5_20261110_fast",
+      "standard_grasp_evidence": "same 11/10 fast loop, accepted T0 inherited verbatim from original session; fixed bottle mark and orientation",
+      "placement_approach_group": "white_1110_original_mark_pose0"
+    }
+  }
+}

@@ -1,0 +1,292 @@
+diff --git a/integration/launch_contact_starvla.py b/integration/launch_contact_starvla.py
+index 6615b1d..34adb64 100755
+--- a/integration/launch_contact_starvla.py
++++ b/integration/launch_contact_starvla.py
+@@ -43,7 +43,8 @@ def prepare_environment(environ, bundle_root):
+     if env["CHECK_ONLY"] != "1" and env["RUN_ROBOT"] != "1":
+         raise ValueError("Set CHECK_ONLY=1 for offline checks; RUN_ROBOT=1 is required for execution")
+     if env["CHECK_ONLY"] != "1" and env.get("CONTACT_TABLETOP_CONFIRMED") != "1":
+-        raise ValueError("Execution requires CONTACT_TABLETOP_CONFIRMED=1 for the fixed supported bottle setup")
++        if env.get("CONTACT_LOCAL_STATION_CONFIRMED") != "1" or not json.loads(Path(config).read_text()).get("contact_reference_execution"):
++            raise ValueError("Execution requires confirmation for the selected local station or fixed tabletop setup")
+     env.setdefault("CONTACT_SCHEDULER_LOG_DIR", str(bundle_root / "outputs" / "contact_scheduler" /
+                                                     datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y%m%d_%H%M%S")))
+     paths = [str(bundle_root / "runtime"), str(bundle_root / "integration")]
+diff --git a/run_on_5090.sh b/run_on_5090.sh
+index c5ad695..877f203 100644
+--- a/run_on_5090.sh
++++ b/run_on_5090.sh
+@@ -32,7 +32,7 @@ case "$MODE" in
+     export CHECK_ONLY=1 RUN_ROBOT=0
+     exec bash integration/run_contact_starvla.sh "$@" ;;
+   run)
+-    if [[ "${CONTACT_TABLETOP_CONFIRMED:-0}" != 1 ]]; then
++    if [[ "${CONTACT_TABLETOP_CONFIRMED:-0}" != 1 && "${CONTACT_LOCAL_STATION_CONFIRMED:-0}" != 1 ]]; then
+       echo 'Set CONTACT_TABLETOP_CONFIRMED=1 only with the bottle supported at its original mark and both tactile faces unloaded in the fully open gripper at episode start.' >&2
+       exit 2
+     fi
+diff --git a/runtime/bottle_scan/contact_recovery_backend.py b/runtime/bottle_scan/contact_recovery_backend.py
+index 33bb780..e2de6ef 100644
+--- a/runtime/bottle_scan/contact_recovery_backend.py
++++ b/runtime/bottle_scan/contact_recovery_backend.py
+@@ -23,8 +23,9 @@ class ContactRecoveryBackend(ContactSkillBackend):
+     supports_graph_fixed_lift = True
+     def __init__(self, config, **kwargs):
+         super().__init__(config, **kwargs)
+-        self.recovery = load_skill_bundle(config["recovery_skill_bundle"],
+-                                         mode=config.get("recovery_skill_mode", "deployment"))
++        if not config.get("contact_reference_execution"):
++            self.recovery = load_skill_bundle(config["recovery_skill_bundle"],
++                                             mode=config.get("recovery_skill_mode", "deployment"))
+         self.skill_after = config.get("skill_after", "stop")
+         self.recovery_mode = config.get("skill_recovery", "enabled")
+         self.single_correction_open_handoff = config.get("single_correction_open_handoff", False)
+@@ -113,12 +114,18 @@ class ContactRecoveryBackend(ContactSkillBackend):
+ 
+     def _evaluation_pose(self, pose):
+         # This function is exclusively for post-hoc evidence; never policy input.
++        if hasattr(self, "contact_reference"):
++            return {"tcp_pose_mm": plain(pose), "offset_ground_truth_mm": None}
+         _, details = self._support_error(pose)
+         return {"measured_a_mm": details["along_a_mm"],
+                 "off_axis_mm": details["off_axis_mm"],
+                 "angle_deg": details["angle_deg"], "tcp_pose_mm": plain(pose)}
+ 
+     def _observation(self, status, probe):
++        cached = getattr(self, "pending_recontact", None)
++        if cached is not None and cached[0] is probe:
++            self.pending_recontact = None
++            return cached[1]
+         p = probe or {}
+         sample = self._sample()
+         supported = self._support_error(sample["pose"])[0] is None
+@@ -146,15 +153,21 @@ class ContactRecoveryBackend(ContactSkillBackend):
+                 stable = bool(start > self._last_window_end and all(
+                     min(current) > max(previous) for current, previous in zip(ids, self._last_window_ids)))
+             self._last_window_end, self._last_window_ids = stamp, ids
++        context = {"target_definition_id": self.target_definition["id"]} if self.target_definition else {}
++        context.update(task="bottle", contact_protocol="fixed_orientation_a",
++                       probe_target_sdk=force["target"] * force["probe_fraction"])
++        if hasattr(self, "contact_reference"):
++            context.update(target_definition_id=self.contact_reference["target_definition_id"],
++                           contact_protocol="fixed_contact_a_v1",
++                           reference_digest=self.contact_reference["reference_digest"],
++                           supported_axes=["a"], action_frame="tcp_at_action_start")
+         return {
+             "first_touch_complete": True, "safety_ok": supported,
+             "timestamp_ns": int(stamp), "now_ns": int(self.hw.now()),
+             "status": status, "descriptors": copy.deepcopy(p.get("descriptors", [])),
+             "bilateral": bilateral, "force_stable": stable,
+             "stable_duration_s": max(0., (stamp-start)/1e9),
+-            "context": {**({"target_definition_id": self.target_definition["id"]} if self.target_definition else {}),
+-                        "task": "bottle", "contact_protocol": "fixed_orientation_a",
+-                        "probe_target_sdk": force["target"] * force["probe_fraction"]},
++            "context": context,
+         }
+ 
+     def _primary_resume_contract(self, result, observation=None):
+@@ -164,6 +177,9 @@ class ContactRecoveryBackend(ContactSkillBackend):
+         trained to consume it. The scheduler uses the contract to choose whether
+         fresh ordinary policy inference may resume.
+         """
++        if hasattr(self, "contact_reference"):
++            from skills.contact_position_a.local_backend import resume_contract
++            return resume_contract(self, result, observation)
+         if self.recovery.model.get("schema") not in ("learned_a_skill_v1","learned_a_skill_set_v1"):
+             return None
+         o = copy.deepcopy(observation or {})
+@@ -243,6 +259,9 @@ class ContactRecoveryBackend(ContactSkillBackend):
+                 "next_stage": "primary_policy_fresh_inference" if allowed else "replan_or_operator"}
+ 
+     def _recover_once(self, runner, target, action, row):
++        if hasattr(self, "contact_reference"):
++            from skills.contact_position_a.local_motion import recover_once
++            return recover_once(self, runner, action, row)
+         if action.get("axis") != "a" or action.get("interface") != "open_retreat_translate_reapproach_probe":
+             raise SkillExecutionError("unsupported_recovery_action")
+         proposed = target.copy()
+@@ -328,7 +347,7 @@ class ContactRecoveryBackend(ContactSkillBackend):
+                 "tabletop_confirmed": self._operator_confirmed()},
+             "initial_skill_outputs": None, "skill_outputs": None,
+             "observations": [], "corrections": [],
+-            "evaluation_only": {"reference_T0": self.T0.tolist(),
++            "evaluation_only": {"offset_ground_truth_mm": None} if hasattr(self, "contact_reference") else {"reference_T0": self.T0.tolist(),
+                 "interpretation": "Measured TCP displacement relative to fixed T0 is evaluation-only; learned contact-state completion does not require return to T0 and does not prove grasp success"},
+             "raw_evidence": {"directory": str(folder), "streams": str(folder/"streams.h5"),
+                              "first_touch_prelude": getattr(self, "_prelude_evidence", None),
+@@ -354,8 +373,11 @@ class ContactRecoveryBackend(ContactSkillBackend):
+             self.hw.activate(self.limits["max_skill_s"])
+             self._attempt_started_ns = self.hw.now()
+             runner.engaged = True
+-            target = self.T0.copy()
+-            target[:3, 3] = self._sample()["pose"][:3, 3]
++            if hasattr(self, "contact_reference"):
++                target = self._sample()["pose"].copy()
++            else:
++                target = self.T0.copy()
++                target[:3, 3] = self._sample()["pose"][:3, 3]
+             initial_pose = self._evaluation_pose(self.hw.pose())
+             result["evaluation_only"].update({"initial_"+k: v for k, v in initial_pose.items()})
+             force = self.cfg["force"]
+diff --git a/runtime/bottle_scan/contact_scheduler.py b/runtime/bottle_scan/contact_scheduler.py
+index 0169f9c..c6832f0 100644
+--- a/runtime/bottle_scan/contact_scheduler.py
++++ b/runtime/bottle_scan/contact_scheduler.py
+@@ -158,7 +158,7 @@ class SchedulerRuntime:
+     def _learned_model(self):
+         recovery = getattr(self.backend, "recovery", None)
+         model = getattr(recovery, "model", {})
+-        return model if isinstance(model, dict) and model.get("schema") in ("learned_a_skill_v1","learned_a_skill_set_v1") else None
++        return model if isinstance(model, dict) and model.get("schema") in ("learned_a_skill_v1","learned_a_skill_set_v1","fixed_contact_a_v1") else None
+ 
+     @staticmethod
+     def _actual_invocation(result):
+@@ -173,7 +173,7 @@ class SchedulerRuntime:
+     def _checked_primary_contract(self, result):
+         model = self._learned_model()
+         if model is None:
+-            if result.get("model_schema") in ("learned_a_skill_v1","learned_a_skill_set_v1"):
++            if result.get("model_schema") in ("learned_a_skill_v1","learned_a_skill_set_v1","fixed_contact_a_v1"):
+                 raise SchedulerFault("learned result has no loaded learned skill identity")
+             return None
+         recovery = self.backend.recovery
+@@ -632,7 +632,7 @@ def load_config(path):
+     value = Path(cfg["hardware_config"]).expanduser()
+     cfg["hardware_config"] = str((path.parent / value).resolve() if not value.is_absolute() else value)
+     config["config_path"] = str(path)
+-    if config.get("recovery_skill_bundle"):
++    if config.get("recovery_skill_bundle") or config.get("contact_reference_execution"):
+         config["skill_after"] = os.environ.get("CONTACT_SKILL_AFTER", config.get("skill_after", "stop"))
+         config["skill_recovery"] = os.environ.get("CONTACT_SKILL_RECOVERY", config.get("skill_recovery", "enabled"))
+     for key, default in (("contact_frames", 2), ("warmup_frames", 30)):
+@@ -656,6 +656,18 @@ def experiment_b_offset_from_environment(*, allow_zero=False, graph_config=None)
+     return offset
+ 
+ 
++def _local_module(config):
++    import sys
++    import bottle_scan
++    root = Path(config["state_graph_execution"]["repository"]).resolve()
++    if str(root / "bottle_scan") not in bottle_scan.__path__:
++        bottle_scan.__path__.append(str(root / "bottle_scan"))
++    if str(root) not in sys.path:
++        sys.path.append(str(root))
++    from skills.contact_position_a import local_backend
++    return local_backend
++
++
+ def preflight_from_environment():
+     """Read files and validate compatibility. Never import/connect a robot."""
+     from .contact_skill_backend import validate_config
+@@ -663,7 +675,7 @@ def preflight_from_environment():
+     if not path:
+         raise ValueError("CONTACT_SCHEDULER_CONFIG is required")
+     config = load_config(path)
+-    report = validate_config(config)
++    report = (_local_module(config).load_local(config)[-1] if config.get("contact_reference_execution") else validate_config(config))
+     offset = experiment_b_offset_from_environment(allow_zero=bool(config.get("recovery_skill_bundle")), graph_config=config)
+     metadata = _entry_metadata(config, offset)
+     return {"scheduler": "starvla_contact_scheduler_v1", "config_path": config["config_path"],
+@@ -677,7 +689,7 @@ def _entry_metadata(config, offset):
+     if entry not in ("", "main_policy", "controlled_prelude"):
+         raise ValueError("CONTACT_TASK_ENTRY must be main_policy, controlled_prelude, or unset")
+     if entry == "main_policy" and (
+-            offset is not None or not config.get("recovery_skill_bundle")
++            offset is not None or not (config.get("recovery_skill_bundle") or config.get("contact_reference_execution"))
+             or config.get("skill_after") != "handoff" or config.get("skill_recovery") != "enabled"):
+         raise ValueError("main_policy entry requires enabled recovery, handoff, and no experiment B offset")
+     if entry == "controlled_prelude" and offset is None:
+@@ -695,7 +707,11 @@ def _entry_metadata(config, offset):
+ def create_runtime(adapter):
+     from .contact_skill_backend import ContactSkillBackend
+     preflight_from_environment()
+-    if os.environ.get("CONTACT_TABLETOP_CONFIRMED") != "1":
++    selected = load_config(os.environ["CONTACT_SCHEDULER_CONFIG"])
++    if selected.get("contact_reference_execution"):
++        if os.environ.get("CONTACT_LOCAL_STATION_CONFIRMED") != "1":
++            raise ValueError("Confirm surveyed station and unloaded gripper before sensor preparation")
++    elif os.environ.get("CONTACT_TABLETOP_CONFIRMED") != "1":
+         raise ValueError("本次桌面验证需 CONTACT_TABLETOP_CONFIRMED=1：瓶子在原标记支撑面，夹爪初始全开空载")
+     config = load_config(os.environ["CONTACT_SCHEDULER_CONFIG"])
+     offset = experiment_b_offset_from_environment(allow_zero=bool(config.get("recovery_skill_bundle")), graph_config=config)
+@@ -733,7 +749,7 @@ def create_runtime(adapter):
+ 
+     try:
+         backend_class = ContactSkillBackend
+-        if config.get("recovery_skill_bundle"):
++        if config.get("recovery_skill_bundle") or config.get("contact_reference_execution"):
+             from .contact_recovery_backend import ContactRecoveryBackend
+             backend_class = ContactRecoveryBackend
+         backend = backend_class(config, output_dir=output, robot=adapter.robot, emit=emit)
+diff --git a/runtime/bottle_scan/contact_skill_backend.py b/runtime/bottle_scan/contact_skill_backend.py
+index cde522d..5721d87 100644
+--- a/runtime/bottle_scan/contact_skill_backend.py
++++ b/runtime/bottle_scan/contact_skill_backend.py
+@@ -501,12 +501,16 @@ class _SkillRunner(Runner):
+         self.meta_path = folder / 'session_meta.json'
+         self.progress_path = folder / 'progress.json'
+         self.meta = {'schema': 'contact_skill_invocation_v1', 'config': self.cfg,
+-                     'model_id': self.fit['model_id'], 'T0': backend.T0.tolist(),
++                     'model_id': self.fit['model_id'],
+                      'source': backend.validation, 'simulated': False}
+         self.progress = {'completed': [], 'active': 'contact', 'airborne': False,
+                          'unsafe_recovery': False}
+         self.current = {'id': 'contact', 'regrasps': 0, 'stages': [], 'servo_exhausted': False}
+-        self.T0, self.bounds = backend.T0.copy(), backend.bounds
++        if hasattr(backend, "contact_reference"):
++            self.meta["target_definition_id"] = backend.contact_reference["target_definition_id"]
++        else:
++            self.meta["T0"] = backend.T0.tolist()
++            self.T0, self.bounds = backend.T0.copy(), backend.bounds
+         self.touch_count = 0
+         self.stage_step = self.airborne = self.engaged = self.quit = self.recovery_done = False
+         self.correction = backend.policy
+@@ -522,6 +526,9 @@ class _SkillRunner(Runner):
+         return super().touch(prefix)
+ 
+     def move(self, target, role='grasp', anchor=None, *, lower_monitor=None):
++        if hasattr(self.backend, "contact_reference"):
++            from skills.contact_position_a.local_backend import move_segment
++            return move_segment(self, target)
+         if role == 'grasp':
+             error, _ = self.backend._support_error(np.asarray(target, float))
+             if error:
+@@ -532,12 +539,16 @@ class _SkillRunner(Runner):
+ class ContactSkillBackend:
+     """Synchronous backend; never call execute from a concurrent control loop."""
+     def __init__(self, config, *, output_dir, robot=None, emit=None):
+-        (self.cfg, self.model, self.source, self.policy, self.T0,
+-         self.limits, self.validation) = _load_validated(config)
++        if config.get("contact_reference_execution"):
++            from skills.contact_position_a.local_backend import initialize_backend
++            initialize_backend(self, config)
++        else:
++            (self.cfg, self.model, self.source, self.policy, self.T0,
++             self.limits, self.validation) = _load_validated(config)
++            self.bounds = MotionBounds(self.cfg, self.T0)
+         self.config = copy.deepcopy(config)
+         self.output_dir = Path(output_dir)
+         self.robot, self.emit = robot, emit
+-        self.bounds = MotionBounds(self.cfg, self.T0)
+         self.hw = None
+         self.prepared = False
+         self.failed = False
+@@ -569,6 +580,8 @@ class ContactSkillBackend:
+         """At episode start: full-open unloaded fingers; no arm/gripper action."""
+         if self.executing or self.failed:
+             raise SkillExecutionError('Cannot prepare during an active/failed invocation; inspect and restart')
++        if hasattr(self, 'station') and self.station.get('offline_fixture'):
++            raise SkillExecutionError('Offline test station cannot open hardware')
+         if not self._operator_confirmed():
+             raise SkillExecutionError('CONTACT_TABLETOP_CONFIRMED=1 is required for this tabletop setup')
+         self.prepared = False
+@@ -602,6 +615,9 @@ class ContactSkillBackend:
+         return result
+ 
+     def _support_error(self, pose):
++        if hasattr(self, "contact_reference"):
++            from skills.contact_position_a.local_motion import support_error
++            return support_error(pose, self.station), {}
+         pose = _pose(pose)
+         if pose is None:
+             return 'invalid_current_pose', {}
