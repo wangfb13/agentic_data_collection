@@ -1,0 +1,322 @@
+{
+  "environment": "simulation",
+  "real_physical_interactions": 0,
+  "training_demo_ids": [
+    "4054fd13e8b04d348c9697b7c6c5aa00",
+    "a1ab2da0caf64494b93635495e39318e"
+  ],
+  "learned_parameters": {
+    "fixture_weights": {
+      "slope": -1.0,
+      "support": 5.0,
+      "fixture": "monotone"
+    }
+  },
+  "comparison": {
+    "older": "fr_530cfde765da42bfa6665373a6951e09",
+    "newer": "fr_8ae1454503274723b607b7bd4ba71a73",
+    "confirmed_improvement_cells": [
+      -5.0,
+      5.0
+    ],
+    "unresolved": false,
+    "verified_connected_expansion": {
+      "negative": {
+        "old": [
+          0,
+          -2.5
+        ],
+        "new": [
+          0,
+          -2.5,
+          -5.0
+        ],
+        "verified_new_cells": [
+          -5.0
+        ]
+      },
+      "positive": {
+        "old": [
+          0,
+          2.5
+        ],
+        "new": [
+          0,
+          2.5,
+          5.0
+        ],
+        "verified_new_cells": [
+          5.0
+        ]
+      }
+    },
+    "scope": "same measured grid, independent frozen plans; no claim between sampled positions"
+  },
+  "scenarios": {
+    "island": {
+      "sides": {
+        "negative": {
+          "farthest_observed_success": -5.0,
+          "verified_connected_range": null,
+          "verified_grid": [],
+          "resolution_mm": 2.5,
+          "boundary_brackets": [
+            [
+              0.0,
+              -2.5
+            ],
+            [
+              -2.5,
+              -5.0
+            ]
+          ],
+          "nonmonotonic_regions": [
+            [
+              -2.5,
+              -5.0
+            ]
+          ],
+          "unknown_intervals": [
+            [
+              0.0,
+              -5.0
+            ]
+          ],
+          "envelope_limited": true,
+          "budget_limited": false
+        },
+        "positive": {
+          "farthest_observed_success": 5.0,
+          "verified_connected_range": null,
+          "verified_grid": [],
+          "resolution_mm": 2.5,
+          "boundary_brackets": [
+            [
+              0.0,
+              2.5
+            ],
+            [
+              2.5,
+              5.0
+            ]
+          ],
+          "nonmonotonic_regions": [
+            [
+              2.5,
+              5.0
+            ]
+          ],
+          "unknown_intervals": [
+            [
+              0.0,
+              5.0
+            ]
+          ],
+          "envelope_limited": true,
+          "budget_limited": false
+        }
+      },
+      "phenomena": {
+        "consumer_failed": 4
+      },
+      "overall": {
+        "n": 5,
+        "successes": 3,
+        "rate": 0.6
+      }
+    },
+    "probability": {
+      "sides": {
+        "negative": {
+          "farthest_observed_success": -5.0,
+          "verified_connected_range": null,
+          "verified_grid": [],
+          "resolution_mm": 2.5,
+          "boundary_brackets": [
+            [
+              -2.5,
+              -5.0
+            ]
+          ],
+          "nonmonotonic_regions": [],
+          "unknown_intervals": [
+            [
+              0.0,
+              -5.0
+            ]
+          ],
+          "envelope_limited": false,
+          "budget_limited": false
+        },
+        "positive": {
+          "farthest_observed_success": 5.0,
+          "verified_connected_range": null,
+          "verified_grid": [],
+          "resolution_mm": 2.5,
+          "boundary_brackets": [
+            [
+              2.5,
+              5.0
+            ]
+          ],
+          "nonmonotonic_regions": [],
+          "unknown_intervals": [
+            [
+              0.0,
+              5.0
+            ]
+          ],
+          "envelope_limited": false,
+          "budget_limited": false
+        }
+      },
+      "phenomena": {
+        "consumer_failed": 14
+      },
+      "overall": {
+        "n": 15,
+        "successes": 9,
+        "rate": 0.6
+      }
+    },
+    "no_contact": {
+      "sides": {
+        "negative": {
+          "farthest_observed_success": null,
+          "verified_connected_range": null,
+          "verified_grid": [],
+          "resolution_mm": 2.5,
+          "boundary_brackets": [],
+          "nonmonotonic_regions": [],
+          "unknown_intervals": [
+            [
+              0.0,
+              -5.0
+            ]
+          ],
+          "envelope_limited": false,
+          "budget_limited": false
+        },
+        "positive": {
+          "farthest_observed_success": null,
+          "verified_connected_range": null,
+          "verified_grid": [],
+          "resolution_mm": 2.5,
+          "boundary_brackets": [],
+          "nonmonotonic_regions": [],
+          "unknown_intervals": [
+            [
+              0.0,
+              5.0
+            ]
+          ],
+          "envelope_limited": false,
+          "budget_limited": false
+        }
+      },
+      "phenomena": {
+        "no_contact": 1
+      },
+      "overall": {
+        "n": 1,
+        "successes": 0,
+        "rate": 0.0
+      }
+    },
+    "reject": {
+      "sides": {
+        "negative": {
+          "farthest_observed_success": 0.0,
+          "verified_connected_range": null,
+          "verified_grid": [],
+          "resolution_mm": 2.5,
+          "boundary_brackets": [],
+          "nonmonotonic_regions": [],
+          "unknown_intervals": [
+            [
+              0.0,
+              -5.0
+            ]
+          ],
+          "envelope_limited": false,
+          "budget_limited": false
+        },
+        "positive": {
+          "farthest_observed_success": 0.0,
+          "verified_connected_range": null,
+          "verified_grid": [],
+          "resolution_mm": 2.5,
+          "boundary_brackets": [
+            [
+              0.0,
+              2.5
+            ]
+          ],
+          "nonmonotonic_regions": [],
+          "unknown_intervals": [
+            [
+              0.0,
+              5.0
+            ]
+          ],
+          "envelope_limited": false,
+          "budget_limited": false
+        }
+      },
+      "phenomena": {
+        "model_ood": 1
+      },
+      "overall": {
+        "n": 2,
+        "successes": 1,
+        "rate": 0.5
+      }
+    },
+    "technical": {
+      "sides": {
+        "negative": {
+          "farthest_observed_success": null,
+          "verified_connected_range": null,
+          "verified_grid": [],
+          "resolution_mm": 2.5,
+          "boundary_brackets": [],
+          "nonmonotonic_regions": [],
+          "unknown_intervals": [
+            [
+              0.0,
+              -5.0
+            ]
+          ],
+          "envelope_limited": false,
+          "budget_limited": false
+        },
+        "positive": {
+          "farthest_observed_success": null,
+          "verified_connected_range": null,
+          "verified_grid": [],
+          "resolution_mm": 2.5,
+          "boundary_brackets": [],
+          "nonmonotonic_regions": [],
+          "unknown_intervals": [
+            [
+              0.0,
+              5.0
+            ]
+          ],
+          "envelope_limited": false,
+          "budget_limited": false
+        }
+      },
+      "phenomena": {
+        "interrupted:synthetic operator checked": 1,
+        "not_observed": 1,
+        "technical_fault": 1
+      },
+      "overall": {
+        "n": 1,
+        "successes": 0,
+        "rate": 0.0
+      }
+    }
+  }
+}

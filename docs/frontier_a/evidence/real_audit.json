@@ -1,0 +1,71 @@
+{
+  "configured_consumer_matches_frozen_version": true,
+  "model": "705c064182ba6815ce83368a08b948403edc0f46acf8a2ce1e7a136997ffab15",
+  "graph_id": "f0956980d31e12184cde1598",
+  "support_states": {
+    "ready": 48
+  },
+  "graph_outputs_on_training_support": {
+    "ready": 48
+  },
+  "pi_status": "trained",
+  "searched_logs": 116,
+  "unreadable": [],
+  "matched_recovery_witnesses": [],
+  "same_graph_and_goal_but_incomplete_binding": [],
+  "other_learned_goal_passes": [
+    {
+      "raw": "/home/dm/DM_das/bottle_grasp_experiment/outputs/state_graph/campaign_white_a_v4_fixed5_history/trials/batch_6_91578e00_0003/episodes/episode_1794737241348600674/events.jsonl",
+      "model_id": "7df34da00e0a45e9f0730c64",
+      "post_condition": "fixed_squeeze_5sdk_lift_floor0330",
+      "initial_model_state": "NeedAction",
+      "independent_initial_state": null
+    }
+  ],
+  "offset_models": {
+    "offset.json": {
+      "model_id": "3a7d7bfb5f2272056a7f",
+      "usable": true,
+      "training_count": 17,
+      "inside_training_label_range_mm": [
+        -5.571945575187177,
+        4.532532057205447
+      ],
+      "blocking_reasons": []
+    },
+    "offset_all.json": {
+      "model_id": "19c20374214fddd4392c",
+      "usable": false,
+      "training_count": 171,
+      "inside_training_label_range_mm": [
+        -6.396686925490577,
+        4.632768356265327
+      ],
+      "blocking_reasons": [
+        "all_data_refit_requires_exact_weight_holdout_before_deployment"
+      ]
+    }
+  },
+  "historical_measured_label_ranges_by_datum": {
+    "relative_trial": {
+      "windows": 6,
+      "min": -6.217740353074656,
+      "max": 3.7500284656372593
+    },
+    "absolute": {
+      "windows": 138,
+      "min": -10.676579079089576,
+      "max": 4.632768356265327
+    },
+    "relative_session": {
+      "windows": 33,
+      "min": -6.184724123308885,
+      "max": 3.804695368140063
+    }
+  },
+  "expert_witnesses": [],
+  "frontier_real_attempts": 0,
+  "physical_interactions_by_this_audit": 0,
+  "next_step": "request documented expert recovery seed",
+  "caveat": "Other consumer/model/budget results do not define the current frontier. Ranges above are measurements, not success bounds."
+}

@@ -12,6 +12,7 @@ from .skill_interface import load_spec, load_callable, task_id, normalize_action
 from .extract_nodes import extract_nodes
 from .cli import build, initial_rule
 from .director_bridge import context, decide, update_hypotheses
+from .facts import coordinate_evidence, observed_positions
 from .operators import validate_decision
 from .acceptance import evaluate_B
 
@@ -111,6 +112,7 @@ def source_initial_settings(plan, spec, rows):
 
 
 def queue_plan(out,state,spec,plan,role,*,source_review=None):
+    if role in ('direct_baseline','policy_frontier','expert_recovery'):raise ValueError('Use the frozen frontier round, not campaign exploration')
     if any(c.get('source_node_id') for c in plan['cells']):
         plan=source_initial_settings(plan,spec,all_rows(out,state))
     items=expand_plan(plan,spec)
@@ -257,7 +259,7 @@ def source_comparison(out, batch, trials, rows, condition):
                'measured_actions': result.get('measured_actions', [r.get('u_executed') for r in nodes if (r.get('u_receipt') or {}).get('applied')]),
                'attempt_reason': result.get('attempt_reason'),
                'initial_node': first['node_id'] if first else None,
-               'actual_initial_coords': first.get('plan_coords') if first else None,
+               'actual_initial_coords': {k:x for k in ('a_offset_mm','l_offset_mm') if (x:=coordinate_evidence(first,k)) is not None} if first else None,
                'distance_to_source': None, 'source_matched': None, 'prior_success_groups_nearby': None,
                'consumer_success': terminal['post'][condition]['success'] if terminal else None,
                'consumer_level': terminal['post'][condition].get('level') if terminal else None}
@@ -309,8 +311,7 @@ def next_decision(out,state,spec,cfg,allow_agent,provider=None):
         state['model']={'bundle':str((dest/'models/bundle.joblib').resolve()),'model_id':built['bundle']['model_id'],
                         'clusters':str((dest/'clusters.json').resolve()),'facts':facts,'trained':training['active_model_trained']}
         state['hypotheses']=update_hypotheses(state['hypotheses'],facts,graph['graph_version'])
-    positions={v:sorted({r['plan_coords'][v] for r in rows if isinstance(r.get('plan_coords',{}).get(v),(int,float))})
-               for v,d in spec['perturbation_variables'].items() if d['kind']=='continuous'}
+    positions=observed_positions(rows,spec)
     ctx=context(spec,state['rule'],facts,hypotheses=state['hypotheses'],history=state['history'],
                 state={'frozen_independent':bool(state['frozen'])},graph_version=graph['graph_version'],
                 observed_positions=positions,budget_left=spec['budget']['max_new_trials']-state['spent']['trials'])

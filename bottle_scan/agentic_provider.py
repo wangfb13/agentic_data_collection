@@ -438,6 +438,11 @@ class AgentProvider:
         return decision
 
 
+    def frontier_select(self, context):
+        """Return a proposal only; the round revalidates membership before any dispatch."""
+        text, _ = self._infer('Choose a single listed experimental cell. Return JSON with an integer index and reason. No hardware tools.', json.dumps(context, ensure_ascii=False, allow_nan=False))
+        return _strict_json(text, proposal=True)
+
     def symbolic_direct(self, context):
         """Guide-defined symbolic protocol; transport only, no experiment execution."""
         from .state_graph.director_bridge import SYSTEM

@@ -153,3 +153,19 @@ def update_rule(rule,decision):
         bounds=new['variables'][var]['range'];bounds[0 if args['side']=='negative' else 1]+=args['by']*(-1 if args['side']=='negative' else 1)
     new.update(parent_rule_id=rule['rule_id'],reason=decision['reason'],evidence_refs=decision['premises'])
     new['rule_id']='rule_'+digest(new)[:16];return new
+
+
+def frontier_context(ledger, round_id):
+    """Separate operator namespace: no legacy expand_range/densify/queue_plan or campaign retraining."""
+    from bottle_scan.max_expert_demonstration_finder.search import offers,report
+    r=ledger.round(round_id);attempts=ledger.attempts(round_id);rep=report(r,attempts)
+    choices=offers(r,attempts)
+    bindings={'round_id':round_id,'model_id':r['manifest']['model_id'],'reference_digest':r['manifest']['reference_digest'],
+              'manifest_digest':r['digest'],'remaining_physical':rep['project_physical_budget_left']}
+    operations=[]
+    if r['stage']=='closed' and any(not x['expert']['stronger'] for x in rep['expert_witnessed_recoverable_set']):
+        operations.append(dict(op='retrain_from_frontier',**bindings))
+    if r['stage']=='explore' and not ledger.pending() and any(e['controller_role']=='policy' and e['ended_ns'] for e in rep['episodes']):
+        operations.append(dict(op='validate_recovery_frontier',requires='predeclare_points_and_n',**bindings))
+    return dict(schema='episode_frontier_operator_context_v1',bindings=bindings,facts=rep['facts'],
+                collection_choices=choices,lifecycle_choices=operations,expert_requests=rep['expert_requests'])

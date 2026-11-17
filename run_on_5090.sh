@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTAINER="${BOTTLE_ROS_CONTAINER:-daimon_ros1_das}"
 COMMAND="${1:-doctor}"
 case "$COMMAND" in
+  frontier) SCRIPT_ARGS=(-m bottle_scan.max_expert_demonstration_finder.cli) ;;
   state-graph) SCRIPT_ARGS=(state_graph.py) ;;
   fixed5-once) SCRIPT_ARGS=(-m skills.contact_position_a.fixed5_once) ;;
   state-graph-loop) SCRIPT_ARGS=(state_graph_campaign.py) ;;
@@ -45,7 +46,7 @@ if (( $# )); then shift; fi
 
 # This standard-library portal delegates real execution to the existing V4
 # scheduler. Help/review/summary never need Docker or robot imports.
-if [[ "$COMMAND" == "fixed5-once" || "$COMMAND" == "state-graph-loop" || "$COMMAND" == "state-graph" || "$COMMAND" == "a-axis" || "$COMMAND" == "primary-skill-export" || "$COMMAND" == "skill-label-review" ]]; then
+if [[ "$COMMAND" == "frontier" || "$COMMAND" == "fixed5-once" || "$COMMAND" == "state-graph-loop" || "$COMMAND" == "state-graph" || "$COMMAND" == "a-axis" || "$COMMAND" == "primary-skill-export" || "$COMMAND" == "skill-label-review" ]]; then
   cd "$ROOT_DIR"
   a_axis_python="$ROOT_DIR/.venv/bin/python"
   if [[ -e /.dockerenv || -e /run/.containerenv ]]; then a_axis_python="$ROOT_DIR/.venv_robot/bin/python"; fi

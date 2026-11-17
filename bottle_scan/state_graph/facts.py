@@ -30,14 +30,24 @@ def shared_ready_regions(rows,clusters,spec,var,cid):
 def coordinate_evidence(row, variable):
     provenance=row.get('provenance',{})
     if provenance.get('coordinate_schema')=='fixed_contact_a_v1':
+        from bottle_scan.max_expert_demonstration_finder.evidence import measured
+        if variable!='a_offset_mm':return None
         label=provenance.get('supervision') or {}
-        if (variable!='a_offset_mm' or label.get('source') not in
-                ('independent_offset_measurement','measured_local_standard_tcp') or not label.get('evidence_id')):
-            return None
-        value=label.get('offset_a_mm')
+        if not label.get('record') or not row.get('t_ns'):return None
+        from bottle_scan.max_expert_demonstration_finder.proof import check_measurement
+        meta={'reference_digest':provenance.get('reference_digest'),'target_definition_id':provenance.get('target_definition_id'),'axis_tcp':provenance.get('a_tcp')}
+        if not check_measurement(label,meta,'first_contact',row['t_ns']):return None
+        return measured(provenance.get('supervision'),provenance.get('reference_digest'),
+                        provenance.get('target_definition_id'),stamp=row.get('t_ns'),
+                        axis=provenance.get('a_tcp'),invalid=provenance.get('invalid_basis_ids',()))
     else:
         value=row.get('plan_coords',{}).get(variable)
     return value if type(value) in (int,float) and np.isfinite(value) else None
+
+
+def observed_positions(rows,spec):
+    return {v:sorted({x for r in rows if (x:=coordinate_evidence(r,v)) is not None})
+            for v,d in spec['perturbation_variables'].items() if d['kind']=='continuous'}
 
 
 def generate_facts(graph,rows,labels,clusters,noise,spec,models=None):

@@ -13,7 +13,7 @@ from bottle_scan.state_graph.skill_interface import repeat_key, model_observatio
 from .contact_reference import validate_reference
 
 
-def rebuild(campaign, ref, out):
+def reference_rows(campaign, ref):
     spec=read(campaign/'spec.json')
     spec['observation']['modalities']={k:v for k,v in spec['observation']['modalities'].items() if k in ('tac','force')}
     if set(spec['observation']['modalities'])!={'tac','force'}:raise ValueError('Need historical tactile and wrench features')
@@ -48,6 +48,11 @@ def rebuild(campaign, ref, out):
                                                r['attrs'].get('time_period'),r['attrs'].get('approach_pose')]
         r['repeat_key']=repeat_key(r,spec)
         rows.append(r)
+    return spec,rows
+
+
+def rebuild(campaign, ref, out):
+    spec,rows=reference_rows(campaign, ref)
     atomic(out/'spec.json',spec)
     built=build(rows,spec,out/'graph',validate=False)
     cid=spec['active_post_condition']

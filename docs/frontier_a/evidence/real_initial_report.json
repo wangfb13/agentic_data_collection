@@ -1,0 +1,978 @@
+{
+  "frozen_configuration": {
+    "action_source": "graph_policy",
+    "artifacts": {
+      "bundle": {
+        "path": "/home/dm/DM_das/bottle_grasp_experiment/outputs/local_contact_a_v1/graph/models/bundle.joblib",
+        "sha256": "185a00ed6812d1ad7b9de9709e5d4615f149feac6c175cfad502929d837137af"
+      },
+      "consumer_checkpoint": {
+        "path": "/home/dm/DM_das/starvla-feat-sparky_x5_starvla/outputs/forcepolicy/mlp_delta_sequence/best.pt",
+        "sha256": "7c6cb70a92099ee851479ded59eca9ad855fbdc539e32c535d59a2df29249004"
+      },
+      "contact_recovery_backend": {
+        "path": "/home/dm/DM_das/contact_scheduler_20261104_experiment_b_v4_single_open_20261110/runtime/bottle_scan/contact_recovery_backend.py",
+        "sha256": "3cecb2fbf0f742c60b5cb7c906eced4d4617361745cf6bf9ab5af76b92a4dd8a"
+      },
+      "contact_scheduler": {
+        "path": "/home/dm/DM_das/contact_scheduler_20261104_experiment_b_v4_single_open_20261110/runtime/bottle_scan/contact_scheduler.py",
+        "sha256": "4e0b7b9f5eecbf1cd77b1742328b5331d9f22a8e81194407e70f32496b374006"
+      },
+      "contact_skill_backend": {
+        "path": "/home/dm/DM_das/contact_scheduler_20261104_experiment_b_v4_single_open_20261110/runtime/bottle_scan/contact_skill_backend.py",
+        "sha256": "f87a07d3a96a56c474a3038be421cde8d0145171348bbe4f97c7d17d9a9e16d8"
+      },
+      "hardware": {
+        "path": "/home/dm/DM_das/bottle_grasp_experiment/config.ros.yaml",
+        "sha256": "9d07012bf6c142dbf792c2bf04db925b97fdc6a0c838012d3bb17bc7fda71339"
+      },
+      "reference": {
+        "path": "/home/dm/DM_das/bottle_grasp_experiment/skills/contact_position_a/white_reference.json",
+        "sha256": "d261f960bf1cffb1db50ac4aac4c6e543b85aaeca2d9334acd8bbaf72a0e707c"
+      },
+      "scheduler": {
+        "path": "/home/dm/DM_das/bottle_grasp_experiment/config.state_graph.v4_scheduler.json",
+        "sha256": "e4001e5656d42592f231205f4ec6d80983e79091ee77781a99758b5202c09b39"
+      },
+      "spec": {
+        "path": "/home/dm/DM_das/bottle_grasp_experiment/outputs/local_contact_a_v1/spec.json",
+        "sha256": "f2734a883394a7e9f723339cbbcb9466adace9efce8ce22c10828cd915d2c446"
+      }
+    },
+    "axis_tcp": [
+      0.0,
+      0.0,
+      1.0
+    ],
+    "code_hashes": {
+      "/home/dm/DM_das/bottle_grasp_experiment/bottle_scan/contact_policy.py": "5b6b5665de93f1e4ecd20d6921a1eaf80000f43b7baa434bfa3f8733a48bce81",
+      "/home/dm/DM_das/bottle_grasp_experiment/bottle_scan/max_expert_demonstration_finder/__init__.py": "6c00210386c369083f7a6b54dc06985fdb29e7fd953bc0dc2109270dc28f4a83",
+      "/home/dm/DM_das/bottle_grasp_experiment/bottle_scan/max_expert_demonstration_finder/audit.py": "02f81344537ac85e2c743660910ac230fd9295b0b8d8607fde88250b0b1b66ec",
+      "/home/dm/DM_das/bottle_grasp_experiment/bottle_scan/max_expert_demonstration_finder/cli.py": "bc508a037768d1e57d2a2462f9bf4c0f0bb429e8f6a6dda1cc29ab44a3046b3c",
+      "/home/dm/DM_das/bottle_grasp_experiment/bottle_scan/max_expert_demonstration_finder/compare.py": "a58dfa77a93ef27ac83a4448bdd05fb85ab3d7b8e1a7ea93e09276ede84e6248",
+      "/home/dm/DM_das/bottle_grasp_experiment/bottle_scan/max_expert_demonstration_finder/demo.py": "ccc8df50d9042a33f35f9d8655600b6a55466a419e0abf2c2260e88aa5616557",
+      "/home/dm/DM_das/bottle_grasp_experiment/bottle_scan/max_expert_demonstration_finder/engine.py": "0b69abf9522f5f44b1e8e37a2bcc01b7af6910863d89de8d3047aaf71aaf2c2e",
+      "/home/dm/DM_das/bottle_grasp_experiment/bottle_scan/max_expert_demonstration_finder/episodes.py": "4de22018fae2ceebbba6c7a7144e231af3a4d97e9ff1dd37a07c440727f512a0",
+      "/home/dm/DM_das/bottle_grasp_experiment/bottle_scan/max_expert_demonstration_finder/evidence.py": "2ff503378e9577f2bb4228dec3c09cd7b5326b02365009e45ee68f5d08b14b57",
+      "/home/dm/DM_das/bottle_grasp_experiment/bottle_scan/max_expert_demonstration_finder/ledger.py": "100e0b09a4bd4e4fc82403a6d8792e392c4b390e71c5515e87a8d7fcbc2d5f2d",
+      "/home/dm/DM_das/bottle_grasp_experiment/bottle_scan/max_expert_demonstration_finder/proof.py": "85f08facd18e31dc0881f94cb493a9e616f2117879cfbbacf38f8c654cfe87eb",
+      "/home/dm/DM_das/bottle_grasp_experiment/bottle_scan/max_expert_demonstration_finder/search.py": "786e98e6bb4933d120bf4e50aa6b91789bd83426a45803659c281ef6e3c25c51",
+      "/home/dm/DM_das/bottle_grasp_experiment/bottle_scan/max_expert_demonstration_finder/train.py": "332c35fecf63c05f2140dce4f7f5cc20124a54ad10eb15ea4033f300e8d847a5",
+      "/home/dm/DM_das/bottle_grasp_experiment/bottle_scan/state_graph/noise.py": "e3a2a10aa7b767e7157dc0490cb1312afa8b523829da6828dbd02d73b23aaf90",
+      "/home/dm/DM_das/bottle_grasp_experiment/bottle_scan/state_graph/skill.py": "cde2b333018de6a87fae57992e17ae7221a2172261d7cc62a42f5e39de2fff61",
+      "/home/dm/DM_das/bottle_grasp_experiment/skills/contact_position_a/frontier.py": "fcd51d85669486a2ee631987c92142eca8dfe8c3a46ceb5c9c928b32457e98e9",
+      "/home/dm/DM_das/bottle_grasp_experiment/skills/contact_position_a/frontier_recorder.py": "29b8512b6d40a5e96a953b4359a2ae66293590bf8549745a43ee39272ce278d3",
+      "/home/dm/DM_das/bottle_grasp_experiment/skills/contact_position_a/local_backend.py": "2d2b63ee60243e4b3ea5116d818577a409acceb23726c8234e77c7834a4042bf",
+      "/home/dm/DM_das/bottle_grasp_experiment/skills/contact_position_a/local_decision.py": "a5c55925cd3cd6fcac61be2082105933d721ae8c1bb0cef49d2f6af2ae93c07a",
+      "/home/dm/DM_das/bottle_grasp_experiment/skills/contact_position_a/local_motion.py": "65baf0404475b8f0239dce595f40de7cbf976ad0f0276a669012adbac4ca1fa7",
+      "/home/dm/DM_das/bottle_grasp_experiment/skills/contact_position_a/ready.py": "6111b45c143565eb3920dd56076b6c9dcb2b03d32a158307d9d14dba2aee3971"
+    },
+    "condition": {
+      "approach_group": "pose_0",
+      "mass_class": "light",
+      "placement_group": "original_mark"
+    },
+    "controller": "fixed_reference_local_a_v1",
+    "environment": "physical",
+    "execution_caps": {
+      "expansion": 5.0,
+      "max_steps": 3,
+      "prepare_mm": 25.0,
+      "range": [
+        -25,
+        25
+      ],
+      "seconds": 90.0,
+      "step_mm": 15.0,
+      "total_mm": 25.0
+    },
+    "expert": null,
+    "expert_exchange": null,
+    "graph_model_id": "f0956980d31e12184cde1598",
+    "graph_version": "79098781926213b918e754cb",
+    "limits": {
+      "cell_tolerance": 1,
+      "expansion": 5,
+      "max_exploration_replacements": 2,
+      "max_software_attempts": 90,
+      "max_steps": 2,
+      "physical_attempts": 60,
+      "prepare_mm": 10,
+      "project_physical_attempts": 180,
+      "range": [
+        -10,
+        10
+      ],
+      "resolution": 2.5,
+      "seconds": 60,
+      "step_mm": 10,
+      "total_mm": 20
+    },
+    "model_id": "705c064182ba6815ce83368a08b948403edc0f46acf8a2ce1e7a136997ffab15",
+    "noise_digest": "f28237f16bbbd8c97011e27d3a95c3b4ae77089ca2d52a39f5809c6028bdf462",
+    "object": "white_bottle",
+    "policy_executable": true,
+    "pose_tolerance_mm": 2.0,
+    "post_condition": {
+      "consumer": {
+        "controller": "existing_forcepolicy",
+        "params": {
+          "closure_floor": 0.33,
+          "target_force_mode": "predicted_by_consumer",
+          "target_force_sdk": null
+        },
+        "version": "7c6cb70a92099ee851479ded59eca9ad855fbdc539e32c535d59a2df29249004",
+        "version_resolution": "Record actual consumer checkpoint identity when freezing the new campaign."
+      },
+      "description": "ForcePolicy 接手并确认力控就绪（L1）",
+      "evaluator": "skills.contact_position_a.ready:handoff_ready",
+      "id": "forcepolicy_handoff_l1_floor0330",
+      "p_min": 0.05,
+      "p_prior": [
+        1,
+        1
+      ],
+      "ready_p": 0.8
+    },
+    "protocol": {
+      "arm": "right",
+      "axes_tcp": {
+        "a": [
+          0.0,
+          0.0,
+          1.0
+        ],
+        "c": [
+          0.0,
+          -1.0,
+          0.0
+        ],
+        "l": [
+          1.0,
+          0.0,
+          0.0
+        ]
+      },
+      "force": {
+        "normal_axis": 2,
+        "normal_signs": [
+          -1.0,
+          -1.0
+        ],
+        "probe_fraction": 0.3,
+        "probe_stable_s": 0.2,
+        "probe_tolerance": 0.25,
+        "target": 5.0,
+        "unit": "sdk"
+      },
+      "tactile": {
+        "dd_threshold": 0.022,
+        "depth_channel": 0,
+        "edge_pixels": 3,
+        "min_area_px": 4,
+        "probe_frames": 5
+      }
+    },
+    "reference_digest": "c31e23df624c8e23e2cf2030215cdf941c722bcd0367784cf383baa586a7518c",
+    "reject_rules": {
+      "parameters": {
+        "gain": 1.0,
+        "max_steps": 2,
+        "observation_max_age_s": 0.5,
+        "offset_deadband_mm": 2.0
+      },
+      "runtime": {
+        "max_action_std": 4.0,
+        "max_steps": 3,
+        "support_distance": 1.0
+      },
+      "servo": {
+        "fit": null,
+        "lift_without_contact": false,
+        "max_delta_mm": 15.0,
+        "max_regrasps": 3,
+        "no_contact_delta_mm": 8.0,
+        "retreat_mm": 15.0,
+        "root_edge_delta_mm": -6.0,
+        "stall_delta_mm": -8.0,
+        "tip_edge_delta_mm": 6.0,
+        "tol_mm": 2.0
+      }
+    },
+    "sensor_version": "unverified",
+    "station": "not_surveyed",
+    "statistics": {
+      "confidence": 0.95,
+      "confirmation_n": 30,
+      "screen_n": 3,
+      "target": 0.8
+    },
+    "support_digest": "048c1ba0e3ff15e29f86aba04d3f27e8676f6ca75ae444ae297906a98fd62694",
+    "target_definition_id": "white_bottle_a_contact_target_20261110_v1",
+    "tool_version": "unverified"
+  },
+  "pending_attempts": [],
+  "expert_requests": [
+    {
+      "round_id": "fr_e581ade0402f426ebe70feb191f2ec0c",
+      "model_id": "705c064182ba6815ce83368a08b948403edc0f46acf8a2ce1e7a136997ffab15",
+      "role": "expert_recovery",
+      "requested_offset_mm": 0,
+      "condition": {
+        "approach_group": "pose_0",
+        "mass_class": "light",
+        "placement_group": "original_mark"
+      },
+      "provider": null,
+      "status": "awaiting_named_provider",
+      "supporting_attempts": []
+    }
+  ],
+  "project_physical_budget_left": 180,
+  "round_id": "fr_e581ade0402f426ebe70feb191f2ec0c",
+  "round_digest": "c8fc3bb94a56e4f98c4a046978eb86af7e4f38f26b6772d82a8218f2b84028be",
+  "model_id": "705c064182ba6815ce83368a08b948403edc0f46acf8a2ce1e7a136997ffab15",
+  "environment": "physical",
+  "phase": "explore",
+  "condition": {
+    "approach_group": "pose_0",
+    "mass_class": "light",
+    "placement_group": "original_mark"
+  },
+  "post_condition": {
+    "consumer": {
+      "controller": "existing_forcepolicy",
+      "params": {
+        "closure_floor": 0.33,
+        "target_force_mode": "predicted_by_consumer",
+        "target_force_sdk": null
+      },
+      "version": "7c6cb70a92099ee851479ded59eca9ad855fbdc539e32c535d59a2df29249004",
+      "version_resolution": "Record actual consumer checkpoint identity when freezing the new campaign."
+    },
+    "description": "ForcePolicy 接手并确认力控就绪（L1）",
+    "evaluator": "skills.contact_position_a.ready:handoff_ready",
+    "id": "forcepolicy_handoff_l1_floor0330",
+    "p_min": 0.05,
+    "p_prior": [
+      1,
+      1
+    ],
+    "ready_p": 0.8
+  },
+  "direct_success": {
+    "overall": {
+      "n": 0,
+      "successes": 0,
+      "rate": null
+    },
+    "physically_dispatched": {
+      "n": 0,
+      "successes": 0,
+      "rate": null
+    },
+    "conditional_on_initial_need_action": {
+      "n": 0,
+      "successes": 0,
+      "rate": null
+    },
+    "valid_first_contact": 0,
+    "contact_fraction": null,
+    "conditional_on_valid_contact": {
+      "n": 0,
+      "successes": 0,
+      "rate": null
+    },
+    "first_coordinate_coverage": 0,
+    "trusted_mm_fraction": null,
+    "preparation_cells": [
+      {
+        "x": -10.0,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      },
+      {
+        "x": -7.5,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      },
+      {
+        "x": -5.0,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      },
+      {
+        "x": -2.5,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      },
+      {
+        "x": 0.0,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      },
+      {
+        "x": 2.5,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      },
+      {
+        "x": 5.0,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      },
+      {
+        "x": 7.5,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      },
+      {
+        "x": 10.0,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      }
+    ],
+    "cells": [
+      {
+        "x": -10.0,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      },
+      {
+        "x": -7.5,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      },
+      {
+        "x": -5.0,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      },
+      {
+        "x": -2.5,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      },
+      {
+        "x": 0.0,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      },
+      {
+        "x": 2.5,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      },
+      {
+        "x": 5.0,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      },
+      {
+        "x": 7.5,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      },
+      {
+        "x": 10.0,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      }
+    ],
+    "sides": {
+      "negative": {
+        "farthest_observed_success": null,
+        "verified_connected_range": null,
+        "verified_grid": [],
+        "resolution_mm": 2.5,
+        "boundary_brackets": [],
+        "nonmonotonic_regions": [],
+        "unknown_intervals": [
+          [
+            0.0,
+            -10.0
+          ]
+        ],
+        "envelope_limited": false,
+        "budget_limited": false
+      },
+      "positive": {
+        "farthest_observed_success": null,
+        "verified_connected_range": null,
+        "verified_grid": [],
+        "resolution_mm": 2.5,
+        "boundary_brackets": [],
+        "nonmonotonic_regions": [],
+        "unknown_intervals": [
+          [
+            0.0,
+            10.0
+          ]
+        ],
+        "envelope_limited": false,
+        "budget_limited": false
+      }
+    },
+    "pending": 0
+  },
+  "policy_recovery_frontier": {
+    "overall": {
+      "n": 0,
+      "successes": 0,
+      "rate": null
+    },
+    "physically_dispatched": {
+      "n": 0,
+      "successes": 0,
+      "rate": null
+    },
+    "conditional_on_initial_need_action": {
+      "n": 0,
+      "successes": 0,
+      "rate": null
+    },
+    "valid_first_contact": 0,
+    "contact_fraction": null,
+    "conditional_on_valid_contact": {
+      "n": 0,
+      "successes": 0,
+      "rate": null
+    },
+    "first_coordinate_coverage": 0,
+    "trusted_mm_fraction": null,
+    "preparation_cells": [
+      {
+        "x": -10.0,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      },
+      {
+        "x": -7.5,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      },
+      {
+        "x": -5.0,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      },
+      {
+        "x": -2.5,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      },
+      {
+        "x": 0.0,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      },
+      {
+        "x": 2.5,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      },
+      {
+        "x": 5.0,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      },
+      {
+        "x": 7.5,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      },
+      {
+        "x": 10.0,
+        "n": 0,
+        "successes": 0,
+        "rate": null
+      }
+    ],
+    "cells": [
+      {
+        "x": -10.0,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      },
+      {
+        "x": -7.5,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      },
+      {
+        "x": -5.0,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      },
+      {
+        "x": -2.5,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      },
+      {
+        "x": 0.0,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      },
+      {
+        "x": 2.5,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      },
+      {
+        "x": 5.0,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      },
+      {
+        "x": 7.5,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      },
+      {
+        "x": 10.0,
+        "screen": {
+          "n": 0,
+          "successes": 0,
+          "rate": null
+        },
+        "descriptive_interval": [
+          0.0,
+          1.0
+        ],
+        "trend": null,
+        "confirmation": {
+          "allocated_completed": 0,
+          "matched": 0,
+          "independent_units": 0,
+          "n_required": null,
+          "successes": 0,
+          "interval": null,
+          "status": "inconclusive"
+        },
+        "evidence": []
+      }
+    ],
+    "sides": {
+      "negative": {
+        "farthest_observed_success": null,
+        "verified_connected_range": null,
+        "verified_grid": [],
+        "resolution_mm": 2.5,
+        "boundary_brackets": [],
+        "nonmonotonic_regions": [],
+        "unknown_intervals": [
+          [
+            0.0,
+            -10.0
+          ]
+        ],
+        "envelope_limited": false,
+        "budget_limited": false
+      },
+      "positive": {
+        "farthest_observed_success": null,
+        "verified_connected_range": null,
+        "verified_grid": [],
+        "resolution_mm": 2.5,
+        "boundary_brackets": [],
+        "nonmonotonic_regions": [],
+        "unknown_intervals": [
+          [
+            0.0,
+            10.0
+          ]
+        ],
+        "envelope_limited": false,
+        "budget_limited": false
+      }
+    },
+    "pending": 0
+  },
+  "expert_witnessed_recoverable_set": [],
+  "autonomous_action_witnesses": [],
+  "confirmation_plan": null,
+  "facts": [
+    {
+      "id": "F_c3da5b54b72c3dc77a",
+      "pred": "recovery_seed_missing",
+      "value": true,
+      "evidence": [],
+      "metrics": {
+        "model": "705c064182ba6815ce83368a08b948403edc0f46acf8a2ce1e7a136997ffab15"
+      }
+    },
+    {
+      "id": "F_5c2e7462473c93575e",
+      "pred": "recovery_frontier_open",
+      "value": true,
+      "evidence": [],
+      "metrics": {
+        "round": "fr_e581ade0402f426ebe70feb191f2ec0c"
+      }
+    }
+  ],
+  "cost": {
+    "acknowledged_activity_counts": {},
+    "physical_cost_detail_unreported": 0,
+    "planned_cells": 0,
+    "attempts_started": 0,
+    "physical_attempts_charged": 0,
+    "physical_attempts_acknowledged": 0,
+    "unresolved_dispatches": 0,
+    "dispatches": 0,
+    "preparations": 0,
+    "touches": 0,
+    "actions": 0,
+    "resets": 0,
+    "expert_actions": 0,
+    "measurements": 0,
+    "faults": 0,
+    "wall_seconds": 0
+  },
+  "valid_evaluations": 0,
+  "phenomena": {},
+  "episodes": [],
+  "interpretation": "discrete initial-state grid; exploratory brackets are not reliability certificates",
+  "ledger_lifetime_cost": {
+    "acknowledged_activity_counts": {},
+    "physical_cost_detail_unreported": 0,
+    "planned_cells": 0,
+    "attempts_started": 0,
+    "physical_attempts_charged": 0,
+    "physical_attempts_acknowledged": 0,
+    "unresolved_dispatches": 0,
+    "dispatches": 0,
+    "preparations": 0,
+    "touches": 0,
+    "actions": 0,
+    "resets": 0,
+    "expert_actions": 0,
+    "measurements": 0,
+    "faults": 0,
+    "wall_seconds": 0
+  }
+}

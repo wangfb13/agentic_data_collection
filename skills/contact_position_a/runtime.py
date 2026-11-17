@@ -51,6 +51,8 @@ def live_window(backend,probe,observation,folder,index,previous,receipt,spec):
         if isinstance(value,dict):values[name]=value['values'];versions[name]=value['version'];feature_evidence[name]=value.get('evidence',{})
         else:values[name]=value;versions[name]=definition['version']
     row={k:event[k] for k in ('node_id','session','trial_id','group_id','window_index','phase','t_ns','plan_coords','attrs','u_executed','u_receipt','previous_node_id')}
+    if event.get('coordinate_schema')=='fixed_contact_a_v1':
+        row['provenance']={k:event.get(k) for k in ('coordinate_schema','target_definition_id','reference_digest','supervision','a_tcp')}
     row.update(task_id=task_id(spec),skill_id=spec['skill_id'],window_valid=observation['bilateral'] and observation['force_stable'],
                obs=values,extractor_versions=versions,feature_evidence=feature_evidence)
     model_observation(row,spec['observation']['modalities'])

@@ -14,7 +14,7 @@ from .labels import generate_labels
 from .skill import train_models
 from .value import predict_value
 from .policy import predict_policy
-from .facts import shared_ready_regions
+from .facts import shared_ready_regions,coordinate_evidence
 
 
 def auc(y,p):return float(roc_auc_score(y,p)) if len(y)>1 and len(set(y))>1 else None
@@ -31,7 +31,7 @@ def reliability(samples):
 
 def grouped_diagnostics(rows,spec,out):
     out.mkdir(parents=True,exist_ok=True);folds=group_folds(rows,spec.get('validation',{}).get('folds',5))
-    modalities=list(spec['observation']['modalities']);coords=sorted({k for r in rows for k,v in r.get('plan_coords',{}).items() if isinstance(v,(int,float))})
+    modalities=list(spec['observation']['modalities']);coords=sorted(k for k in spec.get('perturbation_variables',{}) if any(coordinate_evidence(r,k) is not None for r in rows))
     probes={n:{'coordinates':{v:[] for v in coords},'post_conditions':{p['id']:[] for p in spec['post_conditions']}} for n in modalities}
     held_repeats=[];baseline_scores={p['id']:[] for p in spec['post_conditions']}
     calibration={p['id']:[] for p in spec['post_conditions']};dynamics=[];model_checks={p['id']:[] for p in spec['post_conditions']};evidence=[]
@@ -43,11 +43,11 @@ def grouped_diagnostics(rows,spec,out):
             if nm['modalities'][name]['status']!='ready':continue
             X=np.array([transform(r,name,nm) for r in train]);Z=np.array([transform(r,name,nm) for r in held]);scale=StandardScaler().fit(X);X=scale.transform(X);Z=scale.transform(Z)
             for var in coords:
-                a=[i for i,r in enumerate(train) if isinstance(r.get('plan_coords',{}).get(var),(int,float))]
-                b=[i for i,r in enumerate(held) if isinstance(r.get('plan_coords',{}).get(var),(int,float))]
+                a=[i for i,r in enumerate(train) if coordinate_evidence(r,var) is not None]
+                b=[i for i,r in enumerate(held) if coordinate_evidence(r,var) is not None]
                 if len(a)<3 or not b:continue
-                model=Ridge(alpha=1.).fit(X[a],[train[i]['plan_coords'][var] for i in a]);pred=model.predict(Z[b])
-                probes[name]['coordinates'][var].extend({'node_id':held[i]['node_id'],'actual':held[i]['plan_coords'][var],'prediction':float(v),'error':abs(float(v)-held[i]['plan_coords'][var])} for i,v in zip(b,pred))
+                model=Ridge(alpha=1.).fit(X[a],[coordinate_evidence(train[i],var) for i in a]);pred=model.predict(Z[b])
+                probes[name]['coordinates'][var].extend({'node_id':held[i]['node_id'],'actual':coordinate_evidence(held[i],var),'prediction':float(v),'error':abs(float(v)-coordinate_evidence(held[i],var))} for i,v in zip(b,pred))
             for p in spec['post_conditions']:
                 cid=p['id'];a=[i for i,r in enumerate(train) if r['is_terminal'] and r['post'][cid]['evaluated']];b=[i for i,r in enumerate(held) if r['is_terminal'] and r['post'][cid]['evaluated']]
                 y=[int(train[i]['post'][cid]['success']) for i in a]

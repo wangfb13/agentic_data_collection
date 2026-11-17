@@ -44,7 +44,7 @@ def capture_window(backend,probe,sample,folder,index,previous=None,receipt=None,
         relation={'coordinate_schema':'fixed_contact_a_v1','target_definition_id':ref['target_definition_id'],
                   'reference_digest':ref['reference_digest'],'supervision':{'offset_a_mm':None,'source':None,'evidence_id':None},
                   'plan_coords':{},'a_axis_base':(pose[:3,:3] @ ref['protocol']['axes_tcp']['a']).tolist(),
-                  'supported_axes':['a'],'placement_approach_group':backend.local_settings.get('placement_approach_group'),
+                  'a_tcp':ref['protocol']['axes_tcp']['a'],'supported_axes':['a'],'placement_approach_group':backend.local_settings.get('placement_approach_group'),
                   'unloaded_reference_id':str(folder/'graph_dd_reference.npz')}
     else:
         T0=np.asarray(backend.T0)
@@ -164,7 +164,7 @@ def trials_from_events(events,spec):
                 zvis=vision.encode(read_wrist({'path':image['path']}))
             row={k:e.get(k) for k in ('node_id','session','trial_id','group_id','window_index','phase','t_ns','u_executed','u_receipt','previous_node_id','plan_coords','attrs','preconditions')}
             if 'coordinate_schema' in e:
-                row['provenance'] = {k:e.get(k) for k in ('coordinate_schema','reference_digest','target_definition_id','placement_approach_group','supervision','unloaded_reference_id')}
+                row['provenance'] = {k:e.get(k) for k in ('coordinate_schema','reference_digest','target_definition_id','a_tcp','placement_approach_group','supervision','unloaded_reference_id')}
             rule_id = (e.get('campaign_request') or {}).get('rule_id')
             if rule_id:
                 row['rule_id'] = rule_id

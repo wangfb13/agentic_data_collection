@@ -15,7 +15,7 @@ from .graph import build_graph
 from .labels import generate_labels
 from .clusters import cluster_nodes
 from .skill import train_models
-from .facts import generate_facts
+from .facts import generate_facts,coordinate_evidence,observed_positions
 from .director_bridge import context,decide
 from .report import run_validation,render_report
 
@@ -47,7 +47,7 @@ def initial_rule(rows,spec):
     for name,v in spec['perturbation_variables'].items():
         setting={'active':v.get('active',True)}
         if v['kind']=='continuous':
-            values=[r['plan_coords'].get(name) for r in rows if isinstance(r['plan_coords'].get(name),(int,float))]
+            values=[x for r in rows if (x:=coordinate_evidence(r,name)) is not None]
             setting['range']=[min(values),max(values)] if values else list(v.get('initial_range',v['envelope']))
         else:setting['levels']=v.get('levels',[])
         variables[name]=setting
@@ -63,7 +63,7 @@ def history_replay(rows,spec,out,allow_agent=False,settings=None):
     for end in endpoints:
         prefix.extend(r for k in ordered[previous:end] for r in groups[k]);previous=end
         state=build(prefix,spec,Path(out)/str(end),validate=False);rule=initial_rule(prefix,spec)
-        positions={v:sorted({r['plan_coords'][v] for r in prefix if isinstance(r['plan_coords'].get(v),(int,float))}) for v,d in spec['perturbation_variables'].items() if d['kind']=='continuous'}
+        positions=observed_positions(prefix,spec)
         from .director_bridge import update_hypotheses
         hypotheses=update_hypotheses(hypotheses,state['facts'],state['graph']['graph_version'])
         ctx=context(spec,rule,state['facts'],hypotheses=hypotheses,history=events,graph_version=state['graph']['graph_version'],observed_positions=positions,budget_left=0 if not allow_agent else spec['budget']['max_new_trials'])

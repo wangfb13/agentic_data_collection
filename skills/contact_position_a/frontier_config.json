@@ -1,0 +1,8 @@
+{
+  "action_source":"graph_policy","assets":"outputs/local_contact_a_v1",
+  "reference":"skills/contact_position_a/white_reference.json","scheduler":"config.state_graph.v4_scheduler.json",
+  "condition":{"mass_class":"light","placement_group":"original_mark","approach_group":"pose_0"},
+  "station":null,"expert":null,"expert_exchange":null,"driver":null,
+  "limits":{"range":[-10,10],"resolution":2.5,"cell_tolerance":1,"expansion":5,"prepare_mm":10,"step_mm":10,"total_mm":20,"max_steps":2,"seconds":60,"physical_attempts":60,"project_physical_attempts":180,"max_software_attempts":90,"max_exploration_replacements":2},
+  "statistics":{"target":0.8,"confidence":0.95,"screen_n":3,"confirmation_n":30}
+}
