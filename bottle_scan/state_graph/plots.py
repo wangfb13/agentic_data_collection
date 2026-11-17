@@ -26,7 +26,8 @@ def render_plots(reports,out):
         coordinate=coordinates[0];width=.8/max(1,len(reports))
         for j,r in enumerate(reports):
             numbers=[r['V2']['probes'].get(m,{}).get('coordinates',{}).get(coordinate,{}).get('mae',np.nan) for m in modalities]
-            axes[1].bar(np.arange(len(modalities))+(j-(len(reports)-1)/2)*width,numbers,width,label=names[j])
+            axes[1].bar(np.arange(len(modalities))+(j-(len(reports)-1)/2)*width,
+                        [x if x is not None else np.nan for x in numbers],width,label=names[j])
         axes[1].set_xticks(range(len(modalities)),modalities);axes[1].legend()
         axes[1].set_ylabel('Held-out MAE: '+coordinate)
     else:axes[1].text(.5,.5,'No varying coordinate',ha='center',transform=axes[1].transAxes)

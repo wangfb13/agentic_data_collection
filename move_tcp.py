@@ -50,7 +50,8 @@ def parser():
     targets.add_argument("--pose-file", type=Path)
     targets.add_argument("--direction", choices=("x+", "x-", "y+", "y-", "z+", "z-"))
     p.add_argument("--distance-mm", type=positive, default=5.)
-    p.add_argument("--frame", choices=("base", "tcp"), default="base")
+    p.add_argument("--frame", choices=("base", "tcp", "horizontal_tcp_a"), default="base")
+    p.add_argument("--min-horizontal-projection", type=float)
     p.add_argument("--relative-at-confirm", action="store_true",
                    help="确认后用动作开始时的实测位姿重新生成相对平移目标")
     p.add_argument("--quaternion-xyzw", nargs=4, type=float, metavar=("QX", "QY", "QZ", "QW"))
@@ -152,6 +153,15 @@ def build_target(args, state):
         if delta.shape != (3,) or not np.all(np.isfinite(delta)):
             raise ValueError("位移必须是三个有限数值，单位 mm")
         delta_base=current[:3,:3] @ delta if args.frame=="tcp" else delta
+        if args.frame=="horizontal_tcp_a":
+            if args.direction not in ('z+','z-') or not args.relative_at_confirm:
+                raise ValueError("Horizontal TCP-a requires an action-start signed tool z command")
+            direction=current[:3,2].copy()
+            direction[2]=0.
+            norm=float(np.linalg.norm(direction))
+            if args.min_horizontal_projection is None or not 0 < args.min_horizontal_projection < 1 or norm<=args.min_horizontal_projection:
+                raise ValueError("Horizontal projection of the TCP axis is undefined or below threshold")
+            delta_base=direction*(delta[2]/norm)
         if args.base_z_range_mm is not None and abs(delta_base[2])>1e-9:
             lo,hi=args.base_z_range_mm
             z=current[2,3]

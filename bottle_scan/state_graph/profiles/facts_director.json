@@ -1,0 +1,53 @@
+{
+  "facts": {
+    "measured_placement_coordinates": true,
+    "boundary_before_stochastic": true,
+    "per_side_no_failure": true,
+    "stratified_boundary": true,
+    "boundary_cross_tolerance_mm": null,
+    "noise_based_resolution": true,
+    "boundary_resolution_mm": 0.5,
+    "boundary_noise_multiplier": 2,
+    "capability_predicates": true,
+    "alpha": 0.05,
+    "min_axis_trials": 3,
+    "confidence": 0.95,
+    "bootstrap_reps": 200,
+    "seed": 0,
+    "observability_step_mm": 2.5,
+    "stochastic_probability_band": [
+      0.2,
+      0.8
+    ],
+    "stochastic_min_trials": 4,
+    "tactile_modalities": [
+      "tac_metric",
+      "tac",
+      "geometry"
+    ]
+  },
+  "operators": {
+    "handle_drift_and_unsupported": true,
+    "decouple_dynamics": true
+  },
+  "dynamics": {
+    "min_action_gain": 0.05,
+    "min_amplitude_levels": 2
+  },
+  "director": {
+    "mode": "llm",
+    "use_priors": true,
+    "operator_scoring": true,
+    "checkable_predictions": true,
+    "frontier_weight": 1,
+    "plan_reps": 1,
+    "densify_points": 3,
+    "initial_frontier_step_mm": 2.5
+  },
+  "campaign": {
+    "integrated_frontier": true
+  },
+  "loop": {
+    "rules_via_operators": true
+  }
+}

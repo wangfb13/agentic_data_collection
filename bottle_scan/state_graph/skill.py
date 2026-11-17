@@ -14,6 +14,9 @@ from .dynamics import predict as predict_dynamics
 def train_models(rows,graph,labels,noise,dynamics,spec,out=None):
     models={}
     for c in spec['post_conditions']:
+        if not noise.get('active_modalities'):
+            models[c['id']]={k:{'status':'insufficient_repeat_noise','n':0} for k in ('V','pi')}
+            continue
         models[c['id']]={'V':fit_value(rows,labels,noise,spec,c['id']),
                          'pi':fit_policy(rows,graph,labels,noise,spec,c['id'])}
     support=[{k:r[k] for k in ('node_id','task_id','window_valid','obs','extractor_versions')} for r in rows]
@@ -42,7 +45,7 @@ def optional_plan(bundle,row,policy_prediction):
         for n,indices in bundle['dynamics']['targets'].items():
             for i in indices:simulated['obs'][n][i]=float(pred['mean'][offset]);offset+=1
         value=predict_value(bundle['models'][cid]['V'],simulated,bundle['noise'])
-        if value['status']=='predicted':choices.append((value['V']+spec.get('graph',{}).get('step_cost',1),u.tolist()))
+        if value['status']=='predicted':choices.append(((-value['V'] if spec.get('graph',{}).get('success_value') else value['V'])+spec.get('graph',{}).get('step_cost',1),u.tolist()))
     if not choices:return None
     score,u=min(choices)
     return {'u':u,'score':score,'disagreement':not np.allclose(u,candidate,atol=cfg.get('disagreement_tolerance',.1)),
@@ -54,6 +57,18 @@ class SymbolicRecoverySkill:
         self.bundle=bundle;self.spec=bundle['spec'];self.clusters=clusters;self.events=[]
 
     def infer(self,row,*,readiness_only=False):
+        selected=self.spec['observation'].get('applied_representation')
+        if selected and self.bundle.get('support'):
+            expected=self.bundle['support'][0]['extractor_versions']
+            if any(row.get('extractor_versions',{}).get(k)!=v for k,v in expected.items()):
+                if not row.get('representations'):
+                    return {'state':'Unknown','reason':'selected_representation_not_observed','policy':None}
+                from .representation_apply import apply_representation
+                try:row=apply_representation([row],self.spec,selected,use_feature_file=False)[0][0]
+                except ValueError:return {'state':'Unknown','reason':'selected_representation_unavailable','policy':None}
+                if row['extractor_versions']!=expected:return {'state':'Unknown','reason':'selected_representation_version_mismatch','policy':None}
+            else:
+                row={**row,'extractor_versions':expected,'obs':{k:row['obs'][k] for k in expected}}
         model_observation(row,self.spec['observation']['modalities'])
         cid=self.spec['active_post_condition'];condition=post_spec(self.spec,cid)
         models=self.bundle['models'][cid];v=predict_value(models['V'],row,self.bundle['noise'])
@@ -65,7 +80,7 @@ class SymbolicRecoverySkill:
         for anchor in self.bundle.get('support',[]):
             if anchor['extractor_versions']!=row.get('extractor_versions'):continue
             d=measurement_distance(row,anchor,self.bundle['noise'])
-            if d<=self.spec.get('runtime',{}).get('support_distance',1.):
+            if d<=self.bundle['graph'].get('radii',{}).get('support_distance',self.spec.get('runtime',{}).get('support_distance',1.)):
                 label=self.bundle['graph']['reachability'][cid][anchor['node_id']]
                 support.append((d,label['status'],anchor['node_id']))
         cfg=self.spec.get('runtime',{})
@@ -83,6 +98,13 @@ class SymbolicRecoverySkill:
         if pi['status']!='predicted':return {'state':'Unknown','reason':'policy_untrained','value':v,'policy':pi}
         if max(pi['std'])>cfg.get('max_action_std',4.):
             return {'state':'Unknown','reason':'action_uncertainty','value':v,'policy':pi}
+        graph=self.bundle['graph']
+        if 'best_path' in graph:
+            anchor=min((s for s in support if s[1]=='recoverable'),key=lambda s:(s[0],s[2]))
+            step=graph['best_path'][cid][anchor[2]][0]
+            if step['action_source']=='borrowed':
+                return {'state':'recoverable','value':v,'policy':pi,'plan':{'u':step['action'].get('u')},
+                        'support':support,'action':normalize_action(step['action'],self.spec),'graph_step':step}
         if np.linalg.norm(pi['u'])<cfg.get('min_action_norm',1e-6):
             return {'state':'Unknown','reason':'no_nonzero_recovery_action','value':v,'policy':pi}
         plan=optional_plan(self.bundle,row,pi)

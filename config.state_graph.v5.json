@@ -1,0 +1,20 @@
+{
+  "graph_version": 5,
+  "spec": "skills/contact_position_a/spec.json",
+  "sources": [
+    "outputs/state_graph/20261112_symbolic_v2/features/nodes_with_features.json"
+  ],
+  "out": "outputs/state_graph/offline_v5",
+  "validation_spec": "tests/fixtures/skill_toy/spec.json",
+  "graph_overrides": {
+    "observation": {
+      "tac_version": "legacy_pixel",
+      "tac_metric": false,
+      "auto_select": false
+    },
+    "archive_input": {
+      "features": "legacy pixel descriptors",
+      "reason": "Archived source has no calibrated finger-plane map or exported encoder tokens."
+    }
+  }
+}

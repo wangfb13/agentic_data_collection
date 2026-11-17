@@ -27,7 +27,7 @@ def shared_ready_regions(rows,clusters,spec,var,cid):
     return ready
 
 
-def coordinate_evidence(row, variable):
+def legacy_coordinate(row, variable):
     provenance=row.get('provenance',{})
     if provenance.get('coordinate_schema')=='fixed_contact_a_v1':
         from bottle_scan.max_expert_demonstration_finder.evidence import measured
@@ -45,8 +45,16 @@ def coordinate_evidence(row, variable):
     return value if type(value) in (int,float) and np.isfinite(value) else None
 
 
+def coordinate_evidence(row,variable,spec=None,*,allow_estimate=False):
+    from .v5_facts import coordinate
+    schema=(row.get('provenance') or {}).get('coordinate_schema')
+    if (spec or {}).get('facts',{}).get('measured_placement_coordinates') or schema=='measured_placement_relative':
+        return coordinate(row,variable,allow_estimate)[0]
+    return legacy_coordinate(row,variable)
+
+
 def observed_positions(rows,spec):
-    return {v:sorted({x for r in rows if (x:=coordinate_evidence(r,v)) is not None})
+    return {v:sorted({x for r in rows if (x:=coordinate_evidence(r,v,spec)) is not None})
             for v,d in spec['perturbation_variables'].items() if d['kind']=='continuous'}
 
 
@@ -65,7 +73,7 @@ def generate_facts(graph,rows,labels,clusters,noise,spec,models=None):
         for rule,members in rules.items():
             if all(r['post'][cid]['success'] for r in members):facts.append(fact('no_failure',[rule,cid],[r['node_id'] for r in members],{'terminal_count':len(members)}))
         for var,definition in variables.items():
-            actual=[(r,coordinate_evidence(r,var)) for r in terminal]
+            actual=[(r,coordinate_evidence(r,var,spec)) for r in terminal]
             if definition['kind']=='continuous':
                 actual=[(r,x) for r,x in actual if isinstance(x,(int,float)) and np.isfinite(x)];ref=definition.get('reference',0)
                 for side,condition in [('negative',lambda x:x<ref),('positive',lambda x:x>ref),('reference',lambda x:x==ref)]:
@@ -79,12 +87,14 @@ def generate_facts(graph,rows,labels,clusters,noise,spec,models=None):
                         facts.append(fact('boundary_gap',[var,[x,y],cid],[a['node_id'],b['node_id']],{'gap':y-x,'nominal_step':step,**({('gap_'+definition['unit']):y-x} if definition.get('unit') else {})}))
             counts=defaultdict(list)
             for r in rows:
-                value=coordinate_evidence(r,var) if definition['kind']=='continuous' else r['attrs'].get(var)
+                value=coordinate_evidence(r,var,spec) if definition['kind']=='continuous' else r['attrs'].get(var)
                 if value is not None:counts[str(value)].append(r['node_id'])
             facts.append(fact('coverage',[var,cid],[i for ids in counts.values() for i in ids],{'values':list(counts),'observed_counts':{v:len(ids) for v,ids in counts.items()},'terminal_counts':{v:sum(byid[i]['is_terminal'] and byid[i]['post'][cid]['evaluated'] for i in ids) for v,ids in counts.items()}}))
         for cluster in clusters['clusters']:
             st=cluster['statistics'][cid]
-            if .2<=st['p_hat_median']<=.8 and st['terminal_count']>=4:
+            band=spec.get('facts',{}).get('stochastic_probability_band',[.2,.8])
+            minimum=spec.get('facts',{}).get('stochastic_min_trials',4)
+            if band[0]<=st['p_hat_median']<=band[1] and st['terminal_count']>=minimum:
                 evidence=st['terminal_ids'];facts.append(fact('stochastic_outcome',[cluster['cluster_id'],cid],evidence,st))
                 members=[byid[i] for i in evidence]
                 for var in set(variables)|set(spec['observation'].get('record_only',[])):
@@ -145,4 +155,11 @@ def generate_facts(graph,rows,labels,clusters,noise,spec,models=None):
                     facts.append(fact('development_class_missing', [active],
                                       [i for c in regions for i in c['node_ids']],
                                       {'observed_classes': sorted(present), 'missing_classes': sorted(missing)}))
+    if spec.get('graph_schema')=='state_graph_v5' or any(
+            spec.get(section,{}).get(key) for section,key in (
+            ('facts','measured_placement_coordinates'),('facts','boundary_before_stochastic'),
+            ('facts','per_side_no_failure'),('facts','stratified_boundary'),('facts','noise_based_resolution'),
+            ('facts','capability_predicates'),('operators','handle_drift_and_unsupported'),('operators','decouple_dynamics'))):
+        from .v5_facts import revise
+        return revise(facts,graph,rows,labels,clusters,noise,spec,models)
     return facts

@@ -16,6 +16,15 @@ def policy_samples(rows,graph,labels,spec,condition):
         weight=np.exp(np.clip(cfg.get('advantage_eta',1)*advantages[edge['edge_id']],-30,30))
         if edge['kind']=='inferred':weight*=max(0,1-edge['p_off'])*np.exp(-edge['uncertainty'])
         result.append({'row':byid[edge['source']],'u':edge['u'],'weight':float(weight),'edge':edge,'advantage':advantages[edge['edge_id']]})
+    if 'S' in graph:
+        by_edge={e['edge_id']:e for e in graph['edges']}
+        for item in labels['nodes']:
+            if item['post_condition']!=condition or item.get('action_source')!='borrowed':continue
+            edge=by_edge[item['borrowed_edge_id']]
+            S=graph['S'][condition]
+            advantage=(1-spec['graph']['step_penalty'])*S[edge['target']]-S[item['node_id']]
+            result.append(dict(row=byid[item['node_id']],u=edge['u'],edge=edge,advantage=advantage,
+                               weight=np.exp(np.clip(cfg.get('advantage_eta',1)*advantage,-30,30))))
     return result
 
 

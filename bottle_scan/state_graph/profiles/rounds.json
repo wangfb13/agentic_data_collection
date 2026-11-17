@@ -1,0 +1,26 @@
+{
+  "loop": {
+    "rounds": true,
+    "dev_to_train": true,
+    "expert_to_train": true,
+    "structured_summary": true,
+    "rules_via_operators": true,
+    "termination_rules": true,
+    "summary_style": "evidence_fields",
+    "confidence": 0.95,
+    "seed": 17,
+    "default_exploration_allocation": {
+      "direct": 1,
+      "policy": 0,
+      "expert": 0
+    }
+  },
+  "consumer": {
+    "target_from_rule": true
+  },
+  "report": {
+    "paired_consumers": true,
+    "coordinate_bin_mm": 2.5,
+    "confidence": 0.95
+  }
+}

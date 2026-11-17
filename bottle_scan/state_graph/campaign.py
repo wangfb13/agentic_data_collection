@@ -19,7 +19,7 @@ from .operators import validate_decision
 from .acceptance import evaluate_B
 
 COLLECT={'collect_seed','collect_outcomes','collect_transitions','expand_range','densify','activate_variable',
-         'probe_hidden_variable','block_by_property','repeat_state','verify_edges','validate_B'}
+         'probe_hidden_variable','block_by_property','repeat_state','verify_edges','validate_B','recalibrate_reference','probe_recovery_frontier','request_expert_recovery'}
 
 
 def atomic(path,value):
@@ -46,6 +46,9 @@ def initialize(config,out,*,seed_rows=None):
         return read(out/'state.json')
     prepare=spec['adapters'].get('campaign_prepare')
     if prepare:spec=load_callable(prepare)(spec,cfg)
+    if cfg.get('graph_version') == 5:
+        from .v5_profile import configure
+        spec=configure(spec,cfg.get('graph_overrides'))
     rows=list(seed_rows or [])
     if seed_rows is not None and cfg.get('sources'):raise ValueError('Choose a single source of seed evidence')
     if cfg.get('sources'):rows,_=extract_nodes(cfg['sources'],spec,out/'initial_extraction')
@@ -55,6 +58,9 @@ def initialize(config,out,*,seed_rows=None):
            'hypotheses':[],'history':[],'trials':[],'pending':None,'model':None,'frozen':None,
            'spent':{'trials':0,'actions':0,'failures':0,'seconds':0.},'created_ns':time.time_ns(),
            'complete':False,'robot_started':False}
+    if spec.get('loop', {}).get('rounds'):
+        from .rounds import initialize_rounds
+        initialize_rounds(state, spec, cfg)
     atomic(out/'state.json',state);return state
 
 
@@ -115,14 +121,16 @@ def source_initial_settings(plan, spec, rows):
 
 
 def queue_plan(out,state,spec,plan,role,*,source_review=None):
-    if role in ('direct_baseline','policy_frontier','expert_recovery'):raise ValueError('Use the frozen frontier round, not campaign exploration')
+    if not spec.get('campaign',{}).get('integrated_frontier') and role in ('direct_baseline','policy_frontier','expert_recovery'):raise ValueError('Use the frozen frontier round, not campaign exploration')
     if any(c.get('source_node_id') for c in plan['cells']):
         plan=source_initial_settings(plan,spec,all_rows(out,state))
     items=expand_plan(plan,spec)
-    if state['spent']['trials']+len(items)>spec['budget']['max_new_trials']:raise ValueError('Trial budget exhausted')
+    v5=spec.get('graph_schema')=='state_graph_v5'
+    reserve=state.get('independent_reserve',0) if role!='independent' else 0
+    if state['spent']['trials']+len(items)+reserve>spec['budget']['max_new_trials']:raise ValueError('Trial budget exhausted')
     model=state['frozen'] if role=='independent' else state.get('model')
-    if role in ('development','independent') and (not model or not model.get('trained')):raise ValueError('B needs a trained candidate')
-    batch_id='batch_'+str(len(state['history']))+'_'+digest([plan,role,state['revision']])[:8]
+    if role in ('development','independent','policy_frontier') and (not model or not model.get('trained')):raise ValueError('B needs a trained candidate')
+    batch_id='batch_'+str(len(state['history']))+'_'+digest([plan,role,state['revision']]+([state.get('round_index'),state.get('round_stage'),len(state['trials'])] if v5 else []))[:8]
     queued=[]
     for i,item in enumerate(items):
         trial_id=batch_id+'_'+str(i+1).zfill(4);directory=str((Path(out)/'trials'/trial_id).resolve())
@@ -131,6 +139,9 @@ def queue_plan(out,state,spec,plan,role,*,source_review=None):
                  'rule_id':state['rule']['rule_id'],'model_bundle':model['bundle'] if model else None,
                  'model_id':model['model_id'] if model else None,'frozen_model_id':model['model_id'] if role=='independent' else None,
                  'post_freeze':role=='independent','mode':'learned' if role in ('development','independent') else 'planned',**item}
+        if v5:
+            from .round_data import bind_request
+            bind_request(request, state, spec, role)
         record={'trial_id':trial_id,'directory':directory,'status':'queued','request':request}
         atomic(Path(directory)/'request.json',request);state['trials'].append(record);queued.append(trial_id)
     state['pending']={'batch_id':batch_id,'trial_ids':queued,'role':role,'plan':plan}
@@ -147,6 +158,9 @@ def check_result(result,request,spec):
         row['rule_id']=request['rule_id']
         row['frozen_independent']=request['post_freeze'];row['evaluation_only']=request['post_freeze']
         row['evaluation_scope']='post_freeze_independent' if request['post_freeze'] else 'development'
+    if 'data_role' in request:
+        from .round_data import tag_result
+        tag_result(result,request)
     a=result.get('assessment')
     if a:
         if a.get('evaluated') and (type(a.get('success')) is not bool or not a.get('evidence')):
@@ -229,7 +243,7 @@ def collect_pending(out,state,spec,cfg,*,real=False,executor=None,interactive=Tr
     pending=state['pending'];ids=set(pending['trial_ids'])
     fn=executor
     remaining=deque(t for t in state['trials']
-                    if t['trial_id'] in ids and t['status'] not in ('complete','deferred'))
+                    if t['trial_id'] in ids and t['status'] not in ('complete','deferred','budget_skipped'))
     while remaining:
         trial=remaining.popleft()
         directory=Path(trial['directory']);result_path=directory/'result.json'
@@ -246,6 +260,15 @@ def collect_pending(out,state,spec,cfg,*,real=False,executor=None,interactive=Tr
         if not recovering:
             if not real and executor is None:
                 state['phase']='ready_to_collect';atomic(out/'state.json',state);return
+            if 'dispatch_attempts' in state:
+                limit=spec['budget'].get('max_dispatch_attempts',spec['budget']['max_new_trials'])
+                reserve=0 if trial['request']['post_freeze'] else state['independent_reserve']
+                if state['dispatch_attempts']>=limit-reserve:
+                    trial.update(status='budget_skipped',reason='dispatch_budget_preserves_independent_reserve')
+                    atomic(out/'state.json',state)
+                    continue
+                state['dispatch_attempts']+=1
+                trial.setdefault('dispatch_ordinals',[]).append(state['dispatch_attempts'])
             trial['status']='started';trial['started_ns']=time.time_ns();state['spent']['trials']+=1
             state['robot_started']=bool(state['robot_started'] or real);atomic(out/'state.json',state)
         choose = on_interruption if interactive else None
@@ -320,7 +343,7 @@ def source_comparison(out, batch, trials, rows, condition):
                'measured_actions': result.get('measured_actions', [r.get('u_executed') for r in nodes if (r.get('u_receipt') or {}).get('applied')]),
                'attempt_reason': result.get('attempt_reason'),
                'initial_node': first['node_id'] if first else None,
-               'actual_initial_coords': {k:x for k in ('a_offset_mm','l_offset_mm','h_offset_mm') if (x:=coordinate_evidence(first,k)) is not None} if first else None,
+               'actual_initial_coords': {k:x for k in ('a_offset_mm','l_offset_mm','r_offset_mm','h_offset_mm') if (x:=coordinate_evidence(first,k)) is not None} if first else None,
                'distance_to_source': None, 'source_matched': None, 'prior_success_groups_nearby': None,
                'consumer_success': terminal['post'][condition]['success'] if terminal else None,
                'consumer_level': terminal['post'][condition].get('level') if terminal else None}
@@ -385,7 +408,9 @@ def next_decision(out,state,spec,cfg,allow_agent,provider=None):
                 observed_positions=positions,budget_left=spec['budget']['max_new_trials']-state['spent']['trials'])
     if enrich:
         menu=spec['adapters'].get('campaign_menu')
-        if menu:
+        if spec.get('director',{}).get('mode') in ('llm','fixed_priority'):
+            pass  # Phase facts and the operator registry supply the menu.
+        elif menu:
             load_callable(menu)(ctx, collection_ops, state, training)
         else:
             ctx['applicable_operators']=collection_ops
@@ -410,6 +435,13 @@ def next_decision(out,state,spec,cfg,allow_agent,provider=None):
         atomic(out/'reviews'/(last_batch['batch_id']+'.json'), review)
         ctx['source_comparison'] = clean(review)
     ctx['training']=training;ctx['spent']=state['spent']
+    if spec.get('graph_schema') == 'state_graph_v5':
+        from .director_bridge import finalize_context
+        allowed=cfg.get('execution',{}).get('allowed_operations')
+        if allowed is not None:
+            choices=ctx['applicable_operators']+(collection_ops if enrich else [])
+            ctx['applicable_operators']=list({digest([x['op'],x['bindings']]):x for x in choices if x['op'] in allowed}.values())
+        finalize_context(ctx)
     state['context_path']=str(out/'director_context.json');atomic(state['context_path'],ctx)
     answer=decide(ctx,out/'director',allow_agent=allow_agent,provider=provider,provider_settings=cfg.get('provider_settings'))
     if answer['status']!='accepted':
@@ -422,7 +454,7 @@ def apply_decision(out,state,spec,answer):
     state['history'].append({'decision':decision,'model_id':(state.get('model') or {}).get('model_id'),'at_ns':time.time_ns()})
     state['hypotheses']=answer.get('hypotheses',state['hypotheses']);state['rule']=answer.get('next_rule',state['rule'])
     if op in COLLECT:
-        role='independent' if state['frozen'] else 'development' if op=='validate_B' else 'exploration'
+        role='independent' if state['frozen'] else 'development' if op=='validate_B' else decision.get('args',{}).get('role','expert_recovery' if op=='request_expert_recovery' else 'exploration')
         queue_plan(out,state,spec,decision['plan'],role)
     elif op=='freeze':
         candidate=state.get('candidate_to_freeze')
@@ -451,6 +483,11 @@ def run(out,*,real=False,allow_agent=False,provider=None,executor=None,interacti
     out=Path(out).resolve()
     with ownership(out):
         state=read(out/'state.json');spec=load_spec(out/'spec.json');cfg=read(out/'config.json')
+        if spec.get('loop',{}).get('rounds'):
+            from .rounds import run_locked
+            return run_locked(out,state,spec,cfg,real=real,executor=executor,provider=provider,
+                              allow_agent=allow_agent,interactive=interactive,on_interruption=on_interruption,
+                              max_decisions=max_decisions)
         for _ in range(max_decisions):
             if state['complete']:break
             if state['pending']:

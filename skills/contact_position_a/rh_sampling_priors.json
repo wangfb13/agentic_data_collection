@@ -1,0 +1,12 @@
+{
+  "source": "operator_reported_deployment_frequency",
+  "direct_handoff": "include",
+  "r": {
+    "positive": "available",
+    "negative": "available"
+  },
+  "h": {
+    "positive": "preferred",
+    "negative": "optional"
+  }
+}

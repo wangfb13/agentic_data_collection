@@ -64,7 +64,11 @@ def applicable_operators(facts,spec,rule,state=None):
         for f in find('model_executable'):add('validate_B',[f],post_condition=active,required_symbols=['Ready','NeedAction'])
     for f in find('dev_B_pass'):add('freeze',[f])
     for f in find('label_conflict'):add('review_labels',[f])
-    add('pause');return out
+    add('pause')
+    if spec.get('graph_schema')=='state_graph_v5':
+        from .v5_operators import revise
+        return revise(out,facts,spec,rule,state)
+    return out
 
 
 def validate_decision(answer,context):
@@ -77,9 +81,18 @@ def validate_decision(answer,context):
     facts={f['id']:f for f in context['facts']}
     if not all(p in facts and facts[p]['value'] for p in answer['premises']):raise ValueError('Unknown premise')
     op=answer['operator'];args=answer['args'];spec=context['spec'];variables=spec['perturbation_variables']
+    v5=spec.get('graph_schema')=='state_graph_v5'
+    if v5 and spec.get('director',{}).get('checkable_predictions'):
+        from .v5_director import validate_predictions
+        validate_predictions(answer.get('predictions'),context)
     matches=[c for c in context['applicable_operators'] if c['op']==op and all(args.get(k)==v for k,v in c['bindings'].items()) and set(c['premises_satisfied_by'])<=set(answer['premises'])]
     if not matches:raise ValueError('Operator is not applicable')
     collection={'collect_seed','collect_transitions','collect_outcomes','expand_range','densify','activate_variable','probe_hidden_variable','block_by_property','repeat_state','verify_edges','validate_B'}
+    if v5:
+        from .v5_operators import NEW_COLLECTION, validate
+        collection.update(NEW_COLLECTION)
+        if op=='set_allocation' and args.get('phase')=='plan':collection.add(op)
+        if op not in collection:validate(answer,context)
     plan=answer['plan']
     if op not in collection:
         if plan is not None:raise ValueError('Noncollection operator must not carry a collection plan')
@@ -147,15 +160,25 @@ def validate_decision(answer,context):
             if {b.get(var) for b in cell.get('blocks',[])}!=set(definition['levels']):raise ValueError('Every sampled state must include all declared property blocks')
     if op=='verify_edges' and not any(c.get('source_node_id')==args['source_node_id'] for c in plan['cells']):raise ValueError('Verify the specified inferred edge source')
     if op=='validate_B' and not {'Ready','NeedAction'}<=set(plan.get('cluster_classes',[])):raise ValueError('Validation must cover ready and action states')
+    if v5:validate(answer,context)
     return answer
 
 
-def update_rule(rule,decision):
+def update_rule(rule,decision,spec=None):
     new=deepcopy(rule);args=decision['args'];op=decision['operator'];var=args.get('var')
+    governed=bool(spec and spec.get('loop',{}).get('rules_via_operators'))
+    if governed and (not decision.get('premises') or op in ('pause','complete','validate_B','train','freeze','review_labels','request_capability')):
+        return new
     if op=='activate_variable':new.setdefault('variables',{}).setdefault(var,{})['active']=True
     elif op=='expand_range':
         bounds=new['variables'][var]['range'];bounds[0 if args['side']=='negative' else 1]+=args['by']*(-1 if args['side']=='negative' else 1)
+    if governed:
+        from .v5_operators import rule_fields
+        rule_fields(new,rule,decision,spec)
     new.update(parent_rule_id=rule['rule_id'],reason=decision['reason'],evidence_refs=decision['premises'])
+    if governed:
+        for key in ('rule_id','parent_rule_id','reason','evidence_refs'):
+            new['field_provenance'][key]={'operator':op,'fact_ids':list(decision['premises']),'premises':list(decision['premises'])}
     new['rule_id']='rule_'+digest(new)[:16];return new
 
 

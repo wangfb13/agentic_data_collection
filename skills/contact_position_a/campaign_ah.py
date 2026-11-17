@@ -15,7 +15,7 @@ from bottle_scan.state_graph.extract_nodes import extract_nodes
 from . import ah_evidence as evidence, placement_probe as probe
 from . import ah_current
 from .campaign import technical_error
-from .ah_geometry import COORDS, KIND, basis, measured, position_allowed, position_limits, target, validate_cell
+from .ah_geometry import COORDS, KIND, basis, measured, position_allowed, position_limits, target, validate_cell, horizontal, coord_names
 from bottle_scan.state_graph.common import digest
 from .placement_al_probe import child, contact
 
@@ -29,7 +29,7 @@ RANGE_VERSION="P2_a10_h_minus3_plus45_v1"
 WBC_STAMP_FAULT = r'(?:left|right) WBC timestamp is stale or clocks disagree: -?\d+\.\d+ s'
 
 
-def configuration(out, *, center=None, legacy=False):
+def configuration(out, *, center=None, legacy=False,version=4,overrides=None):
     bounds=((-3,3),(-3,3)) if legacy else (A_RANGE,H_RANGE)
     steps=[max(abs(lo),abs(hi)) for lo,hi in bounds]
     grid=[[-3,0],[3,0],[0,-3],[0,3]] if legacy else (
@@ -81,6 +81,13 @@ def configuration(out, *, center=None, legacy=False):
             '优先探索瓶身向瓶盖方向目前未观测的高度，可以直接在新高度轻触，或沿 +h 移动后重触。'
             '小幅向上有样本只说明该局部有数据；根据证据选幅度，不要求等距扫点，不假定 +45 即为瓶盖或 Ready。'
             '允许从高处返回，−h 不需要与 +h 对称配额。返回数据不代替下游结果。')
+    if version==5:
+        from bottle_scan.state_graph.v5_profile import configure
+        from . import ah_v5_config
+        spec=configure(spec,overrides)
+        ah_v5_config.configure(spec,cfg)
+        cfg['execution'].pop('sampling_preference',None)
+        cfg['execution'].pop('phase',None)
     return spec,cfg
 
 
@@ -239,18 +246,22 @@ def move(folder,label,arguments,limit,z_bounds,invoke):
 def check_measured_pose(center,pose,axis,spec):
     if pose_error(center,pose)[1]>1:
         raise ValueError('当前姿态与 P2 朝向相差超过 1°')
-    coords,residual=measured(center,pose,center,axis)
+    coords,residual=measured(center,pose,center,axis,spec)
     if residual>POSITION_TOLERANCE_MM or not position_allowed(coords,spec,
             base_height=pose[2,3]-center[2,3],tolerance=POSITION_TOLERANCE_MM):
         raise ValueError('实测 TCP 不在 P2 的 a/h 工作区')
     return coords
 
 
-def prepare_position(folder,center,start_u,hw,spec,invoke):
+def prepare_position(folder,center,start_u,hw,spec,invoke,*,station_z_bounds=None):
     axis=hw['axes_tcp']['a']
     bounds=position_limits(spec)
     limit=max(spec['task']['action_space']['max_step'])
-    goal=target(center,center,start_u,axis)
+    goal=target(center,center,start_u,axis,spec)
+    safe_z=center[2,3]+bounds[1]
+    if station_z_bounds is not None:
+        safe_z=[max(safe_z[0],station_z_bounds[0]),min(safe_z[1],station_z_bounds[1])]
+        if not safe_z[0]<=goal[2,3]<=safe_z[1]:raise ValueError('Requested start exceeds station z bounds')
     # A straight line between any two nominal points is at most the sum of the two spans.
     # Leave room for the two measured endpoints and progress allowed by the existing feedback tolerance.
     max_legs=1+int(np.ceil((np.sum(bounds[:,1]-bounds[:,0])+2*POSITION_TOLERANCE_MM)/(limit-POSITION_TOLERANCE_MM-1)))
@@ -261,15 +272,15 @@ def prepare_position(folder,center,start_u,hw,spec,invoke):
         distance=np.linalg.norm(delta)
         if distance<=.25:return
         end=goal[:3,3] if distance<=limit else now[:3,3]+delta*((limit-1)/distance)
-        move(folder,'prepare_move_'+str(leg),['--xyz-mm',*end],limit,center[2,3]+bounds[1],invoke)
+        move(folder,'prepare_move_'+str(leg),['--xyz-mm',*end],limit,safe_z,invoke)
         if distance<=limit:return
     raise RuntimeError('准备移动未在分段预算内到达起点')
 
 
 def issued_action(center,now,u,axis,spec):
     coords=check_measured_pose(center,now,axis,spec)
-    goal=target(now,now,u,axis)
-    change,_=measured(now,goal,center,axis)
+    goal=target(now,now,u,axis,spec)
+    change,_=measured(now,goal,center,axis,spec)
     bounds=position_limits(spec)
     # Both axes and the actual base height must respect the same nominal endpoint contract.
     # At a boundary, account for measured starting error without rotating the requested action.
@@ -335,7 +346,7 @@ def requeue_technical_interruption(directory):
         raise campaign.RetryTrial(f'{stage}：{reason}')
 
 
-def acquire(folder,trial,slot,identity,center,settings,mass,invoke,placement='P2'):
+def acquire(folder,trial,slot,identity,center,settings,mass,invoke,placement='P2',*,index=None):
     invoke('-m','skills.contact_position_a.placement_probe','probe','--run',folder,
            '--placement',placement,'--trial',slot,'--real')
     path=folder/placement/slot/'observation.json'
@@ -344,10 +355,13 @@ def acquire(folder,trial,slot,identity,center,settings,mass,invoke,placement='P2
     if r.get('state')=='released' and (r.get('status')!='contact' or not (r.get('probe') or {}).get('valid')):
         return None,'无有效双侧轻触：'+str(r.get('status'))
     if r.get('bottle_static') is not True:return None,'本次瓶位连续性未经确认'
-    return evidence.window(path,identity,center,trial,0 if slot=='initial' else 1,settings,mass,placement),None
+    return evidence.window(path,identity,center,trial,(0 if slot=='initial' else 1) if index is None else index,settings,mass,placement),None
 
 
 def execute_trial(request,directory,spec,cfg,*,real,interactive,invoke=child,ask=input):
+    if spec.get('graph_schema')=='state_graph_v5':
+        from .p3_trial import execute_trial as run_rh
+        return run_rh(request,directory,spec,cfg,real=real,interactive=interactive)
     if not real or not interactive or request['role']!='exploration' or request['mode']!='planned':
         raise ValueError('此入口仅执行现场确认的探索采集')
     validate_cell({'settings':request['settings'],'actions':request['actions'],'blocks':[request['block']]},spec,'',{})
@@ -395,10 +409,13 @@ def execute_trial(request,directory,spec,cfg,*,real,interactive,invoke=child,ask
     first,reason=acquire(directory,group,'initial',identity,center,settings,mass,run_child,placement)
     if first:
         windows.append(first)
-        for action in request['actions']:
+        cumulative=np.zeros(2)
+        for step,action in enumerate(request['actions'],1):
+            first=windows[-1]
+            suffix='' if step==1 else '_'+str(step)
             # Each relative command is transformed by move_tcp from its own actual start snapshot.
             u=np.array(action['u'])
-            now=current_pose(directory,'action_pose',hw,run_child)
+            now=current_pose(directory,'action_pose'+suffix,hw,run_child)
             prev=first['provenance']['measured_pose']
             if pose_error(prev,now)[0]>1 or pose_error(prev,now)[1]>1:
                 raise ValueError('释放后位置改变，不能把此动作归给原轻触')
@@ -409,23 +426,28 @@ def execute_trial(request,directory,spec,cfg,*,real,interactive,invoke=child,ask
                     raise ValueError('首触未取得有效的 a/h 位移测量')
                 issued=issued_action(center,now,u,axis,spec)
             frame_field='preflight_pose' if current else 'frame_start'
-            campaign.atomic(directory/'action_command.json',{'requested_u':u.tolist(),'preflight_u':issued.tolist(),
+            campaign.atomic(directory/('action_command'+suffix+'.json'),{'requested_u':u.tolist(),'preflight_u':issued.tolist(),
                             frame_field:now.tolist(),'range_version':ah_current.MODE if current else RANGE_VERSION})
             index=0 if u[0] else 1
-            frame=('tcp','base')[index]
+            frame=(('horizontal_tcp_a' if horizontal(spec) else 'tcp'),'base')[index]
             amount=issued[index]
             print(f'本次预览 {("a","h")[index]}={amount:+.2f} mm（计划 {u[index]:+g} mm）',flush=True)
-            options=['--relative-at-confirm'] if current else []
-            path=move(directory,'action_move',[*options,'--frame',frame,'--direction','z+' if amount>0 else 'z-',
+            options=['--relative-at-confirm'] if current or horizontal(spec) else []
+            if frame=='horizontal_tcp_a':options+=['--min-horizontal-projection',spec['geometry']['minimum_horizontal_projection']]
+            path=move(directory,'action_move'+suffix,[*options,'--frame',frame,'--direction','z+' if amount>0 else 'z-',
                       '--distance-mm',abs(amount)],spec['task']['action_space']['max_step'][index],
                       z_limits,run_child)
             moves.append(str(path))
-            terminal_settings={} if current else dict(zip(COORDS,np.asarray(start)+u))
-            terminal,reason=acquire(directory,group,'reprobe',identity,center,terminal_settings,mass,run_child,placement)
+            cumulative+=u
+            terminal_settings={} if current else dict(zip(coord_names(spec),np.asarray(start)+cumulative))
+            terminal,reason=acquire(directory,group,'reprobe'+suffix,identity,center,terminal_settings,mass,run_child,placement,index=step)
             if terminal:
-                evidence.link(first,terminal,[path],axis,command=issued if current else None)
+                evidence.link(first,terminal,[path],axis,command=issued if current else None,spec=spec)
                 windows.append(terminal)
-                if not terminal.get('u_receipt'):reason='前后轻触与实测移动回执不一致，未计作转移'
+                if not terminal.get('u_receipt'):
+                    reason='前后轻触与实测移动回执不一致，未计作转移'
+                    break
+            else:break
     if windows:windows[-1]['is_terminal']=True
     data=directory/'windows.json'
     campaign.atomic(data,[dict(trial_id=trial,windows=windows)])
@@ -475,8 +497,12 @@ def main(argv=None):
     task.add_argument('--preview-plan',action='store_true',help='从已结算证据离线预览下一批，保留现场队列')
     task.add_argument('--list-deferred',action='store_true',help='只读列出本批暂缓试次及证据目录')
     task.add_argument('--retry-deferred',nargs='+',metavar='ID',help='把指定暂缓试次或 all 放回原队列，仅改队列')
+    p.add_argument('--graph-version',type=int,choices=(4,5),default=4,help='Python entry preserves legacy replay; start_state_graph_ah.sh defaults to version 5')
     p.add_argument('--allow-agent',action='store_true')
     opts=p.parse_args(argv)
+    if opts.graph_version==5:
+        from .ah_transition_v5 import entry
+        return entry(opts)
     if not opts.fixed_p2 and not opts.from_current:
         if opts.out is None:
             opts.from_current='P3'

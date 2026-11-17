@@ -1,0 +1,90 @@
+{
+  "graph": {
+    "resolution_scaled_radius": true,
+    "resolution_min_edges": 3,
+    "min_action_bin_relative_tolerance": 0.2,
+    "similar_radius": 0.5,
+    "success_value": true,
+    "step_penalty": 0.08,
+    "recover_p_min": 0.5,
+    "borrow_similar_actions": true,
+    "similar_penalty": 0.08
+  },
+  "sinks": {
+    "ready_radius": 0.5,
+    "lower_bound_ready": true,
+    "ready_quantile": 0.05
+  },
+  "clusters": {
+    "radius": 0.6
+  },
+  "runtime": {
+    "support_distance": 0.6
+  },
+  "dynamics": {
+    "endpoint_radius": 0.5
+  },
+  "labels": {
+    "include_inferred": false
+  },
+  "noise": {
+    "combine": "joint",
+    "repeat_dimension_multiplier": 2.0,
+    "max_neighbor_fraction_change": 0.2
+  },
+  "observation": {
+    "tac_version": "calibrated_rh",
+    "tac_embed_readout": "grid",
+    "tac_grid": [
+      2,
+      3
+    ],
+    "tac_temperature": 1.0,
+    "tac_calibration": null,
+    "tac_metric": true,
+    "auto_select": true,
+    "metric": {
+      "input_modality": "tac_embed",
+      "displacement_weight": 1.0,
+      "repeat_weight": 0.5,
+      "ridge": 0.01,
+      "min_groups": 3,
+      "folds": 4,
+      "max_error_mm": 1.5,
+      "a_axis_tcp": [
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    "representations": {
+      "current": "legacy_geometry",
+      "folds": 4,
+      "confidence": 0.95,
+      "bootstrap_reps": 300,
+      "seed": 71,
+      "required_scenes": [
+        "a_axis",
+        "h_body",
+        "h_shoulder",
+        "different_angles",
+        "different_objects"
+      ],
+      "candidates": [
+        "legacy_geometry",
+        "calibrated_rh",
+        "force",
+        "mean",
+        "attention",
+        "grid",
+        "soft_argmax",
+        "tac_metric",
+        "calibrated_rh+force",
+        "tac_metric+force"
+      ],
+      "min_comparison_groups": 4,
+      "min_valid_bootstrap_fraction": 0.9,
+      "matched_position_tolerance_mm": 1.0
+    }
+  }
+}

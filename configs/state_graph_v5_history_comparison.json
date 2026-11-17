@@ -1,0 +1,19 @@
+{
+  "source": "outputs/state_graph/v4_implementation_20261113/historical_rebuild",
+  "output": "outputs/state_graph/v5_history_comparison",
+  "primary_post_condition": "handoff_e1e2_squeeze_floor0336",
+  "folds": 5,
+  "objects": [
+    "white_bottle",
+    "green_bottle"
+  ],
+  "historical_observation": "precomputed legacy descriptors only",
+  "overrides": {
+    "observation": {
+      "tac_version": "legacy",
+      "tac_metric": false,
+      "auto_select": false,
+      "tac_embed_readout": "mean"
+    }
+  }
+}

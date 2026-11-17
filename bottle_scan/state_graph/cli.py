@@ -22,6 +22,11 @@ from .report import run_validation,render_report
 
 def build(rows,spec,out,validate=True,assessments=(),previous_clusters=None):
     out=Path(out);out.mkdir(parents=True,exist_ok=True)
+    expected_schema=spec.get('graph_schema','state_graph_v4')
+    if (out/'graph.json').exists() and json.loads((out/'graph.json').read_text()).get('schema')!=expected_schema:
+        raise ValueError('Use different output directories for different graph versions')
+    if expected_schema=='state_graph_v5':
+        rows=[r for r in rows if not independent(r)]
     noise=fit_noise(rows,spec);f=fit_dynamics(rows,noise,spec)
     graph=build_graph(rows,noise,spec,f);labels=generate_labels(graph,rows,spec);clusters=cluster_nodes(rows,graph,noise,labels,spec)
     from .clusters import reconcile_regions
@@ -47,7 +52,7 @@ def initial_rule(rows,spec):
     for name,v in spec['perturbation_variables'].items():
         setting={'active':v.get('active',True)}
         if v['kind']=='continuous':
-            values=[x for r in rows if (x:=coordinate_evidence(r,name)) is not None]
+            values=[x for r in rows if (x:=coordinate_evidence(r,name,spec)) is not None]
             setting['range']=[min(values),max(values)] if values else list(v.get('initial_range',v['envelope']))
         else:setting['levels']=v.get('levels',[])
         variables[name]=setting
@@ -102,8 +107,16 @@ def pipeline(spec,sources,out,allow_agent=False,settings=None,replay=True,assess
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('command',choices=['extract','analyze','run','replay'])
-    parser.add_argument('--config',default='config.state_graph.symbolic_v3_20261112.json');parser.add_argument('--spec');parser.add_argument('--out');parser.add_argument('--allow-agent',action='store_true');parser.add_argument('--skip-fixture',action='store_true')
+    parser.add_argument('--graph-version',type=int,choices=[4,5]);parser.add_argument('--config',default='config.state_graph.v5.json');parser.add_argument('--spec');parser.add_argument('--out');parser.add_argument('--allow-agent',action='store_true');parser.add_argument('--skip-fixture',action='store_true')
     args=parser.parse_args(argv);cfg=json.loads(Path(args.config).read_text());spec=load_spec(args.spec or cfg['spec']);out=Path(args.out or cfg['out'])
+    version=args.graph_version or cfg.get('graph_version',4)
+    from .v5_profile import configure
+    spec=configure(spec,cfg.get('graph_overrides'),version=version)
+    if version==5:
+        from .v5_profile import protect_output
+        protect_output(out, kind='analysis')
+    elif (out/'v5_output.json').exists():
+        raise ValueError('Choose a separate legacy replay directory')
     if args.command=='extract':extract_nodes(cfg.get('sources',spec.get('data',{}).get('sources',[])),spec,out);return 0
     assessments=[]
     for source in cfg.get('B_assessments',[]):

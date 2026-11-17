@@ -1,0 +1,104 @@
+{
+  "cluster_classes": [
+    "Ready",
+    "NeedAction"
+  ],
+  "cells": [
+    {
+      "settings": {
+        "r_offset_mm": 0,
+        "h_offset_mm": 0
+      },
+      "reps": 1,
+      "blocks": [
+        {
+          "mass_class": "light"
+        },
+        {
+          "mass_class": "heavy"
+        }
+      ],
+      "actions": []
+    },
+    {
+      "settings": {
+        "r_offset_mm": -3,
+        "h_offset_mm": 0
+      },
+      "reps": 1,
+      "blocks": [
+        {
+          "mass_class": "light"
+        },
+        {
+          "mass_class": "heavy"
+        }
+      ],
+      "actions": []
+    },
+    {
+      "settings": {
+        "r_offset_mm": 3,
+        "h_offset_mm": 0
+      },
+      "reps": 1,
+      "blocks": [
+        {
+          "mass_class": "light"
+        },
+        {
+          "mass_class": "heavy"
+        }
+      ],
+      "actions": []
+    },
+    {
+      "settings": {
+        "r_offset_mm": 0,
+        "h_offset_mm": 3
+      },
+      "reps": 1,
+      "blocks": [
+        {
+          "mass_class": "light"
+        },
+        {
+          "mass_class": "heavy"
+        }
+      ],
+      "actions": []
+    },
+    {
+      "settings": {
+        "r_offset_mm": 0,
+        "h_offset_mm": 9
+      },
+      "reps": 1,
+      "blocks": [
+        {
+          "mass_class": "light"
+        },
+        {
+          "mass_class": "heavy"
+        }
+      ],
+      "actions": []
+    },
+    {
+      "settings": {
+        "r_offset_mm": 0,
+        "h_offset_mm": 15
+      },
+      "reps": 1,
+      "blocks": [
+        {
+          "mass_class": "light"
+        },
+        {
+          "mass_class": "heavy"
+        }
+      ],
+      "actions": []
+    }
+  ]
+}

@@ -6,7 +6,7 @@ from bottle_scan.hardware_arm import pose_error
 from bottle_scan.state_graph.facts import fact
 from . import placement_probe as probe
 from .placement_al_probe import contact
-from .ah_geometry import COORDS, KIND, measured
+from .ah_geometry import COORDS, KIND, measured, coord_names, action_kind, horizontal, basis
 
 
 def iter_trials(sources,spec):
@@ -69,7 +69,7 @@ def captured_window(path, identity, center, group, index, nominal, mass, placeme
                             'force_frame_ns':times,'reference_digest':ref['reference_digest']})
 
 
-def link(first,last,receipts,axis,*,command=None):
+def link(first,last,receipts,axis,*,command=None,spec=None):
     if not receipts or first['group_id']!=last['group_id']:
         return
     records=[probe.read(p) for p in receipts]
@@ -87,29 +87,33 @@ def link(first,last,receipts,axis,*,command=None):
     if any(pose_error(frame,p)[1]>1 for r in records for p in (r['execution_start_mm'],r['end_measured_mm'])):
         return
     details={}
+    delta=np.asarray(after)[:3,3]-np.asarray(before)[:3,3]
+    a_base=np.asarray(frame)[:3,:3]@axis
     if command is None:
-        u,residual=measured(before,after,frame,axis)
+        u,residual=measured(before,after,frame,axis,spec)
     else:
         # The executed command selects one direction. A 2-axis inverse is
         # unnecessary even when the tool happens to point along base Z.
         k=int(np.flatnonzero(command)[0])
         rec=records[0]
         if (len(records)!=1 or rec.get('frame_semantics')!='action_start_v1'
-                or rec.get('relative_frame')!=('tcp','base')[k]):
+                or rec.get('relative_frame')!=(('horizontal_tcp_a' if horizontal(spec) else 'tcp'),'base')[k]):
             return
         a_base=np.asarray(frame)[:3,:3]@axis
-        direction=a_base if k==0 else np.array([0.,0.,1.])
+        direction=(basis(frame,axis,spec)[:,0] if horizontal(spec) else a_base) if k==0 else np.array([0.,0.,1.])
         delta=np.asarray(after)[:3,3]-np.asarray(before)[:3,3]
         distance=float(delta@direction)
         if distance*command[k]<=0:return
         residual=float(np.linalg.norm(delta-distance*direction))
         u=np.zeros(2)
         u[k]=distance
-        details=dict(measurement='projection_on_executed_axis',commanded_axis=('a','h')[k],
+        details=dict(measurement='projection_on_executed_axis',commanded_axis=coord_names(spec)[k].split('_')[0],
                      net_displacement_base_mm=delta.tolist(),tcp_a_base_z=float(a_base[2]))
-    if residual>1:return
+    if residual>(spec or {}).get('geometry',{}).get('receipt_tolerance_mm',1):return
+    if horizontal(spec):
+        details.update(raw_tcp_a_projection_mm=float(delta@a_base),out_of_plane_residual_mm=float(np.linalg.norm(delta-basis(frame,axis,spec)@(basis(frame,axis,spec).T@delta))),net_displacement_base_mm=delta.tolist())
     last.update(previous_node_id=first['node_id'],u_executed=u.tolist(),
-                u_receipt={'applied':True,'kind':KIND,'semantics':['tcp_a_at_start','base_link_positive_z'],
+                u_receipt={'applied':True,'kind':action_kind(spec),'semantics':['horizontal_tcp_a_at_start' if horizontal(spec) else 'tcp_a_at_start','base_link_positive_z'],
                            'start_pose':frame,'net_contact_displacement_mm':u.tolist(),'residual_mm':residual,
                            'move_logs':[str(p) for p in receipts],**details})
 
@@ -135,14 +139,14 @@ def historical(run, identity):
     return trials
 
 
-def amplitude_coverage(edges, bounds, placement, index, sign):
+def amplitude_coverage(edges, bounds, placement, index, sign,spec=None):
     """Open spaces between distinct measurements, partitioned only by real observations."""
-    axis = ('a', 'h')[index]
+    axis=coord_names(spec)[index].split('_')[0]
     lower, upper = (0., bounds[1]) if sign > 0 else (bounds[0], 0.)
     samples = []
     for edge in edges:
         receipt = edge.get('receipt') or {}
-        if receipt.get('kind') != KIND or receipt.get('applied') is not True:
+        if receipt.get('kind') != action_kind(spec) or receipt.get('applied') is not True:
             continue
         net = receipt.get('net_contact_displacement_mm')
         if net is None or len(net) != 2 or not np.isfinite(net).all():
@@ -186,19 +190,20 @@ def exploration_context(rows,graph,facts,spec):
             ops.append(dict(op='collect_seed',bindings={'post_condition':spec['active_post_condition']},
                             premises_satisfied_by=[missing['id']]))
     cid=spec['active_post_condition']
-    capability=spec['capabilities'][KIND]
+    capability=spec['capabilities'][action_kind(spec)]
     available=[]
-    for i,axis in enumerate(('a','h')):
+    for i,key in enumerate(coord_names(spec)):
+        axis=key.split('_')[0]
         if capability['kind']!='vector' or capability['dim']!=2 or capability['max_action'][i]<=0:
             continue
-        cap=fact('translation_available',[axis],[],{'kind':KIND,'frame':['current_tcp_a','base_link_Z'][i],
+        cap=fact('translation_available',[axis],[],{'kind':action_kind(spec),'frame':['horizontal_tcp_a' if horizontal(spec) else 'current_tcp_a','base_link_Z'][i],
                  'unit':'mm','max_command_mm':capability['max_action'][i],'scope':placement or 'declared_for_P2_exploration'})
         available.append(cap['id'])
         facts.append(cap)
         for sign,side in ((1,'positive'),(-1,'negative')):
             if placement:
-                bounds=spec['perturbation_variables'][COORDS[i]]['envelope']
-                coverage=amplitude_coverage(edges,bounds,placement,i,sign)
+                bounds=spec['perturbation_variables'][coord_names(spec)[i]]['envelope']
+                coverage=amplitude_coverage(edges,bounds,placement,i,sign,spec)
                 facts.append(coverage)
                 matches=coverage['evidence']
             else:
@@ -214,7 +219,7 @@ def exploration_context(rows,graph,facts,spec):
     if len(available)==2:
         # A mixed batch compares directions, with one axis per physical trial.
         ops.append(dict(op='collect_transitions',bindings={'post_condition':cid},premises_satisfied_by=available))
-    if 'placement_geometry' in spec:
+    if 'placement_geometry' in spec and spec.get('graph_schema')!='state_graph_v5':
         observed=[(r['node_id'],r['plan_coords']['h_offset_mm']) for r in rows if r.get('session')=='P2'
                   and 'h_offset_mm' in r.get('plan_coords',{}) and r['window_valid']]
         ceiling=spec['perturbation_variables']['h_offset_mm']['envelope'][1]

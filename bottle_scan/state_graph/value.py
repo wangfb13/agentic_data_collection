@@ -43,7 +43,7 @@ def fit_value(rows,labels,noise,spec,condition,seed=0):
         y=np.array([int(labelmap[selected[i]['node_id']][key]) for i in idx])
         model=LogisticRegression(C=1,max_iter=1000).fit(fitted['scaler'].transform(X[idx]),y) if len(set(y))>1 else None
         controls[head]={'model':model,'constant':float(y.mean()) if len(y) else None,'counts':{str(c):int(sum(y==c)) for c in (0,1)}}
-    return {'status':'trained','n':len(selected),'post_condition':condition,'regression':fitted,'classification_controls':controls,'probability_regression':probability,
+    return {**({'value_semantics':'discounted_success'} if spec.get('graph',{}).get('success_value') else {}),'status':'trained','n':len(selected),'post_condition':condition,'regression':fitted,'classification_controls':controls,'probability_regression':probability,
             'fit_node_ids':[r['node_id'] for r in selected],'fit_groups':sorted(set(groups)),
             'uncertainty_q90':float(np.quantile(sigma[:,0],.9)),'feature_source':'obs only','p_estimate':'auxiliary estimate of local Beta-smoothed outcome probability, separate from exp(-V)'}
 
@@ -56,4 +56,7 @@ def predict_value(model,row,noise):
         pm,ps=predict_regression(model['probability_regression'],feature_vector(row,noise));mean[1],sigma[1]=pm[0,0],ps[0,0]
     heads={name:float(head['model'].predict_proba(features)[0,1]) if head['model'] is not None else head['constant']
            for name,head in model.get('classification_controls',{}).items()}
-    return {'status':'predicted','invocation_probability':heads.get('I'),'exit_probability':heads.get('beta'),'V':float(max(0,mean[0])),'std':float(sigma[0]),'p_hat':float(np.clip(mean[1],0,1)),'p_std':float(sigma[1])}
+    value=float(max(0,mean[0]));fields={}
+    if model.get('value_semantics')=='discounted_success':
+        value=min(1.,value);fields['S']=value
+    return {**fields,'status':'predicted','invocation_probability':heads.get('I'),'exit_probability':heads.get('beta'),'V':value,'std':float(sigma[0]),'p_hat':float(np.clip(mean[1],0,1)),'p_std':float(sigma[1])}

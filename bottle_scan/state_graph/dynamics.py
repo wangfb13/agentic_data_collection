@@ -108,7 +108,12 @@ def fit_dynamics(rows,noise,spec,seed=0):
     groups=np.array([t['group_id'] for t in items]);minimum=cfg.get('min_transitions',6)
     if len(items)<minimum or len(set(groups))<3:
         return {'status':'insufficient_transitions','n':len(items),'groups':len(set(groups)),'required':minimum,'fit_node_ids':[r['node_id'] for r in rows]}
-    inputs=cfg.get('inputs',list(spec['observation']['modalities']));mapping=target_mapping(rows,spec);metric=target_metric(rows,mapping,noise)
+    inputs=cfg.get('inputs',list(spec['observation']['modalities']));mapping=target_mapping(rows,spec)
+    if noise.get('combine')=='joint':
+        inputs=[n for n in inputs if n in noise['active_modalities'] and n in rows[0]['obs']]
+        mapping={n:v for n,v in mapping.items() if n in noise['active_modalities']}
+        if not inputs or not mapping:return {'status':'insufficient_repeat_noise','n':len(items)}
+    metric=target_metric(rows,mapping,noise)
     if metric is None:return {'status':'insufficient_repeat_noise','n':len(items)}
     offset=0;slices=[]
     for name in inputs:
@@ -120,14 +125,28 @@ def fit_dynamics(rows,noise,spec,seed=0):
     # an optimistically small off-event rate.
     from sklearn.model_selection import GroupKFold
     oof=np.zeros_like(Y);oof_sigma=np.zeros_like(Y)
+    ablate=spec.get('facts',{}).get('capability_predicates',False)
+    no_action=np.array(X);no_action[:,offset:]=0
+    no_action_oof=np.zeros_like(Y)
     for k,(tr,te) in enumerate(GroupKFold(min(3,len(set(groups)))).split(X,groups=groups)):
         sub=_fit_ensemble(X[tr],Y[tr],groups[tr],cfg,seed+100*(k+1));oof[te],oof_sigma[te]=_predict_ensemble(sub,X[te])
+        if ablate:
+            other=_fit_ensemble(no_action[tr],Y[tr],groups[tr],cfg,seed+100*(k+1))
+            no_action_oof[te],_=_predict_ensemble(other,no_action[te])
     errors=np.array([prediction_distance(y-p,metric) for y,p in zip(Y,oof)]);off=(errors>1).astype(int)
     model=_fit_ensemble(X,Y,groups,cfg,seed)
     pmodel=None
     if len(set(off))>1:pmodel=LogisticRegression(C=1,max_iter=1000).fit(model['x_scaler'].transform(_design(X,model['projectors'])),off)
     norms=np.array([prediction_distance(s,metric) for s in oof_sigma])
-    return {'status':'trained','n':len(items),'groups':len(set(groups)),'inputs':inputs,'targets':mapping,'metric':metric,'ensemble':model,
+    ablation={}
+    if ablate:
+        error_without=float(np.mean([prediction_distance(y-p,metric) for y,p in zip(Y,no_action_oof)]))
+        gain=float(1-errors.mean()/error_without) if error_without>0 else None
+        ablation={'action_ablation':{'action_gain':gain,'relative_gain':gain,'error_with_action':float(errors.mean()),
+                                    'error_without_action':error_without,'groups':len(set(groups)),
+                                    'evidence':[t['edge']['source'] for t in items],'protocol':'paired group-heldout identical ensemble'},
+                  'no_action_ensemble':_fit_ensemble(no_action,Y,groups,cfg,seed)}
+    return {**ablation,'status':'trained','n':len(items),'groups':len(set(groups)),'inputs':inputs,'targets':mapping,'metric':metric,'ensemble':model,
             'p_classifier':pmodel,'p_constant':float((off.sum()+1)/(len(off)+2)),'p_off_oof_labels':off.tolist(),
             'mean_delta':Y.mean(0),'linear_baseline':Ridge(alpha=1).fit(model['x_scaler'].transform(_design(X,model['projectors'])),Y),
             'input_projection':'train-fitted per-modality PCA; action and low-dimensional physical inputs retained','p_off_label_definition':'Cross-fitted endpoint residual > 1 in modeled components, without adding predictive variance.',
@@ -150,7 +169,7 @@ def inferred_cost(uncertainty,p_off,spec):
     return float(cfg.get('step_cost',1))+float(cfg.get('uncertainty_cost',1))*uncertainty-np.log(max(1e-9,1-p_off))
 
 
-def inferred_edges(rows,model,noise,spec,observed):
+def inferred_edges(rows,model,noise,spec,observed,*,endpoint_radius=1.):
     existing={(e['source'],e['target']) for e in observed};best={}
     targets=np.array([target_vector(r,model['targets']) for r in rows]);actions=action_grid(spec,observed)
     limit=spec.get('dynamics',{}).get('max_uncertainty',1.)
@@ -163,7 +182,7 @@ def inferred_edges(rows,model,noise,spec,observed):
             candidates=[i for i,r in enumerate(rows) if r['node_id']!=source['node_id'] and (source['node_id'],r['node_id']) not in existing]
             if not candidates:continue
             j=min(candidates,key=lambda i:(distances[i],rows[i]['node_id']))
-            if distances[j]>1:continue
+            if distances[j]>endpoint_radius:continue
             key=(source['node_id'],rows[j]['node_id']);cost=inferred_cost(prediction['uncertainty'],prediction['p_off'],spec)
             edge={'source':key[0],'target':key[1],'kind':'inferred','executable':True,'action':{'kind':spec['task']['action_space']['id'],'u':u.tolist()},'u':u.tolist(),'cost':float(cost),'sigma':prediction['sigma'].tolist(),
                   'uncertainty':prediction['uncertainty'],'p_off':prediction['p_off'],'endpoint_distance':distances[j],
@@ -181,9 +200,17 @@ def evaluate_dynamics(model,held_rows,spec):
         base=target_vector(t['source'],model['targets']);x=input_vector(t['source'],t['u'],model['inputs'])
         linear=model['linear_baseline'].predict(model['ensemble']['x_scaler'].transform(_design(x,model['ensemble']['projectors'])))[0]
         baseline_errors={name:abs(actual-(base+delta)).tolist() for name,delta in [('identity',0.),('mean_delta',model['mean_delta']),('linear',linear)]}
+        if 'no_action_ensemble' in model:
+            x0=x.copy();x0[-len(t['u']):]=0
+            y0,_=_predict_ensemble(model['no_action_ensemble'],x0)
+            baseline_errors['same_model_no_action']=prediction_distance(actual-base-y0[0],model['metric'])
         samples.append({'baseline_absolute_error':baseline_errors,'source':t['source']['node_id'],'target':t['target']['node_id'],'group_id':t['group_id'],
                         'distance':d,'variance_augmented_distance':expanded,'correct_within_noise':d<=1,
                         'off_label':int(d>1),'p_off':prediction['p_off'],'uncertainty':prediction['uncertainty'],
                         'absolute_error':abs(residual).tolist(),'sigma':prediction['sigma'].tolist(),
                         'within_2sigma':(abs(residual)<=2*prediction['sigma']).tolist()})
-    return {'status':'computed' if samples else 'no_heldout_transitions','samples':samples}
+    result={'status':'computed' if samples else 'no_heldout_transitions','samples':samples}
+    if samples and 'no_action_ensemble' in model:
+        denom=np.mean([v['baseline_absolute_error']['same_model_no_action'] for v in samples])
+        result['action_gain']=float(1-np.mean([v['distance'] for v in samples])/denom) if denom else None
+    return result

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
+from . import lift_evidence
 from bottle_scan.hardware_arm import pose_error
 from bottle_scan.state_graph.campaign import atomic
 from bottle_scan.state_graph.common import clean, digest
@@ -73,7 +74,7 @@ def sampling_worker(hw,expected,predictor):
                               RuntimeConfig(contact_threshold=expected['runtime_contact_threshold']))
 
 
-def consume(hw,expected,directory,controller,worker,ask=input):
+def consume(hw,expected,directory,controller,worker,ask=input,options=None):
     controller.reset()
     directory=Path(directory)
     hw.hold()
@@ -104,9 +105,11 @@ def consume(hw,expected,directory,controller,worker,ask=input):
                         g._publish(command,'p3_forcepolicy')
                 info.update(force_sequences=f['sequence'],wrench_zeroed=f['wrench_zeroed'])
                 info['bilateral']=all(n>t for n,t in zip(f['normal'],f['contact_thresholds']))
+                if options and options.get('auto_l2'):
+                    info['centroids']=lift_evidence.centroids(f['raw']['dd'],hw.dd_reference,hw.cfg['tactile'])
                 trace.write(json.dumps(clean({'t_ns':time.monotonic_ns(),'stage':hw.stage,**info}),allow_nan=False)+'\n')
                 return info
-            return lift_test(hw,expected,directory,tick,ask=ask)
+            return lift_test(hw,{**expected,**(options or {})},directory,tick,ask=ask)
     finally:
         hw.end_record()
 
@@ -115,7 +118,7 @@ def lift_test(hw,params,directory,tick,*,ask=input,clock=time.monotonic):
     """Keep the consumer active in flight. AIR receipt prevents unconditional release on faults."""
     path=directory/'consumer.json'
     air=directory/'airborne.json'
-    out=dict(controller='existing_forcepolicy',version=params['version'],params={'closure_floor':.33},
+    out=dict(controller=params.get('controller','existing_forcepolicy'),version=params['version'],params={'closure_floor':params.get('closure_floor',.33)},
              L1=None,L2=None,evidence=[str(directory/'force_trace.jsonl')],lift_mm=params['lift_mm'],hold_s=params['hold_s'])
     def save(reason):
         out['reason']=reason
@@ -126,12 +129,22 @@ def lift_test(hw,params,directory,tick,*,ask=input,clock=time.monotonic):
         info=tick()
         if info['reference_valid'] and info['tcp_motion_ready'] and info['force_ready'] and info['bilateral']:
             break
+        if info.get('floor_saturated'):
+            out.update(L1=False,failure_cause='closure_floor_reached',contact_lost=not info['bilateral'])
+            return save('closure_floor_reached')
         if clock()>=until:
             if not info['reference_valid']:
                 raise RuntimeError('ForcePolicy prediction unavailable at handoff: '+str(info['reason']))
             out['L1']=False
+            if params.get('auto_l2') or params.get('dual_paired'):
+                out['contact_lost']=not info['bilateral']
+            if params.get('fixed_force_failure_causes') and out['controller']=='fixed_force':
+                out['failure_cause']='target_force_not_reached_other'
             return save('force_not_ready_by_deadline')
         hw.wait(.02)
+    pre=info
+    lift_samples,hold_samples=[],[]
+    auto=params.get("auto_l2",False)
     monitor=None
     axes=[i for i in range(3) if i!=hw.cfg['force']['normal_axis']] if 'lower' in hw.cfg else []
     def tangential(info):
@@ -152,6 +165,7 @@ def lift_test(hw,params,directory,tick,*,ask=input,clock=time.monotonic):
         hw.move(target,speed)
         while True:
             info=tick(regulate=contact_ok)
+            if up and auto:lift_samples.append(info)
             if contact_ok and not info['reference_valid']:
                 raise RuntimeError('ForcePolicy reference lost during lift/return')
             if contact_ok and not (info['bilateral'] and info['tcp_motion_ready']):
@@ -176,6 +190,7 @@ def lift_test(hw,params,directory,tick,*,ask=input,clock=time.monotonic):
         hw.set_context('LIFT')
         ok=segment(goal,True,True)
         out['lift_pose']=hw.pose().tolist()
+        height_ok=abs(out['lift_pose'][2][3]-goal[2,3])<=m['pose_tolerance_mm']
         hw.set_context('HOLD')
         lifted=tangential(tick())-before if ok and axes else None
         loads=[]
@@ -185,6 +200,7 @@ def lift_test(hw,params,directory,tick,*,ask=input,clock=time.monotonic):
             info=tick()
             if not info['reference_valid']:
                 raise RuntimeError('ForcePolicy reference lost during hold')
+            if auto:hold_samples.append(info)
             ok=info['bilateral'] and info['tcp_motion_ready'] and not hw.hold_drop_seen
             if ok and axes and tuple(info['force_sequences'])!=previous:
                 loads.append(tangential(info)-before)
@@ -199,10 +215,24 @@ def lift_test(hw,params,directory,tick,*,ask=input,clock=time.monotonic):
         hw.set_context('LOWER')
         return_ok=segment(base,False,ok)
         out['return_pose']=hw.pose().tolist()
-        if ask('下降已停止。确认瓶底已由桌面支撑，输入 TABLE 才松爪：').strip().upper()!='TABLE':
+        supported=bool(auto and out.get('unload_detected') and return_ok and
+                       abs(out['return_pose'][2][3]-base[2,3])<=m['pose_tolerance_mm'])
+        if not supported and ask('下降已停止。确认瓶底已由桌面支撑，输入 TABLE 才松爪：').strip().upper()!='TABLE':
             raise RuntimeError('Bottle support unconfirmed; holding for operator')
         atomic(air,{'possibly_airborne':False,'return_pose':out['return_pose']})
         # TCP motion alone cannot prove that the bottle rose with the hand.
+        if auto:
+            observed,cause,metrics=lift_evidence.automatic(pre,lift_samples,hold_samples,height_ok,
+                    ok and out['measured_hold_s']>=params['hold_s'],params)
+            classify=out['controller']!='fixed_force' or params.get('fixed_force_failure_causes')
+            out.update(L2=observed,automatic_L2=observed,failure_cause=cause if classify else None,metrics=metrics,return_contact=return_ok,
+                       contact_lost=any(not x['bilateral'] for x in lift_samples+hold_samples),
+                       object_moved=cause=='slip_during_hold',audit=None,label_conflict=False)
+            if params.get('audit_selected'):
+                answer=ask('本次为随机抽查。瓶底确实离桌并保持到结束？y / n / u：').strip().lower()
+                audit={'y':True,'n':False}.get(answer)
+                out.update(audit=audit,label_conflict=observed is not None and audit is not None and observed!=audit)
+            return save(cause or 'automatic_lift_hold')
         seen=ask('刚才瓶底是否确实离桌并保持满 2 秒？y / n / u（看不清）：').strip().lower()
         out.update(observed_lift_hold={'y':True,'n':False}.get(seen),return_contact=return_ok)
         out['L2']=False if not ok or seen=='n' else True if seen=='y' else None
@@ -215,3 +245,34 @@ def lift_test(hw,params,directory,tick,*,ask=input,clock=time.monotonic):
                 hw.hold()
         raise
 
+
+def consume_fixed(hw,condition,params,directory,ask=input):
+    """Use the existing gripper force loop and the same lift/hold/return protocol."""
+    directory=Path(directory)
+    if hw.cfg['gripper']['min_normalized']!=params['fixed_closure_floor']:
+        raise ValueError('Fixed-force floor differs from active hardware controller')
+    band=lift_evidence.ForceBand(params)
+    hw.set_context('FIXED_FORCE')
+    hw.begin_record(directory/'force_streams')
+    try:
+        with (directory/'force_trace.jsonl').open('x',buffering=1) as trace:
+            hw.force(params['fixed_force_sdk'],params['force_tolerance_sdk'])
+            def tick(regulate=True):
+                hw.check()
+                f=hw.force_sample()
+                opening=hw.grip.fresh()['normalized']
+                bilateral=bool(np.all(np.asarray(f['normal'])>f['contact_thresholds']))
+                band.update(min(f['stamps'])*1.e-9,opening,float(np.mean(f['normal'])),bilateral)
+                info=dict(reference_valid=True,force_ready=band.ready,tcp_motion_ready=bilateral,
+                          floor_saturated=band.saturated and params.get('fixed_force_failure_causes',False),
+                          force_sequences=f['sequence'],wrench_zeroed=f['wrench_zeroed'],bilateral=bilateral,
+                          opening=opening,normal=f['normal'],stamps_ns=f['stamps'])
+                if params.get('auto_l2'):
+                    info['centroids']=lift_evidence.centroids(f['raw']['dd'],hw.dd_reference,hw.cfg['tactile'])
+                trace.write(json.dumps(clean({'stage':hw.stage,**info}),allow_nan=False)+'\n')
+                return info
+            consumer=condition['consumer']
+            return lift_test(hw,{**params,**consumer['params'],'controller':consumer['controller'],
+                                 'version':consumer['version']},directory,tick,ask=ask)
+    finally:
+        hw.end_record()

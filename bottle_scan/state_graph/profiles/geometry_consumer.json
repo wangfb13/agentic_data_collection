@@ -1,0 +1,52 @@
+{
+  "geometry": {
+    "horizontal_basis": true,
+    "minimum_horizontal_projection": 0.1,
+    "coordinate_residual_mm": 1.0,
+    "orientation_tolerance_deg": 1.0,
+    "receipt_tolerance_mm": 1.0,
+    "placement_envelopes_mm": {
+      "r_offset_mm": [
+        -10,
+        10
+      ],
+      "h_offset_mm": [
+        -3,
+        45
+      ]
+    },
+    "max_step_mm": [
+      10,
+      45
+    ],
+    "reference_probe_repetitions": 1,
+    "recalibration_probe_repetitions": 2
+  },
+  "runtime": {
+    "max_steps": 3
+  },
+  "consumer": {
+    "auto_l2": true,
+    "dual_paired": true,
+    "target_from_rule": true,
+    "fixed_force_failure_causes": true,
+    "fixed_force_sdk": 5.0,
+    "force_tolerance_sdk": 0.5,
+    "stable_force_s": 0.5,
+    "fixed_closure_floor": 0.33,
+    "floor_tolerance": 0.001,
+    "floor_saturation_s": 0.5,
+    "lift_mm": 40.0,
+    "hold_s": 2.0,
+    "grip_timeout_s": 60.0,
+    "load_tolerance": 0.25,
+    "load_tolerance_unit": "N",
+    "slip_threshold": 2.0,
+    "slip_threshold_unit": "px",
+    "load_calibration": null,
+    "weight_newtons": {},
+    "audit_rate": 0.1,
+    "pair_position_tolerance_mm": 1.0,
+    "pair_orientation_tolerance_deg": 1.0
+  }
+}

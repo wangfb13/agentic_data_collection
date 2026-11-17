@@ -60,7 +60,7 @@ def grouped_diagnostics(rows,spec,out):
                 if a.get('window_index',0)==b.get('window_index',0)==0 and a.get('repeat_key')==b.get('repeat_key') and group_id(a)!=group_id(b):
                     held_repeats.append({'fold':fold,'nodes':[a['node_id'],b['node_id']],'distance':float(H[i,j]),'within_noise':bool(H[i,j]<=1)})
         for p in spec['post_conditions']:calibration[p['id']]+=heldout_probability(held,train,nm,spec,p['id'])
-        if not all(x['status']=='ready' for x in nm['modalities'].values()):continue
+        if not nm['active_modalities'] or not all(nm['modalities'][n]['status']=='ready' for n in nm['active_modalities']):continue
         f=fit_dynamics(train,nm,spec,seed=fold);fd=evaluate_dynamics(f,held,spec);dynamics+=fd['samples']
         # Held-out topology/labels are evaluation targets only. They are never
         # used in fitting V, policy, dynamics, PCA or repeated-noise estimates.

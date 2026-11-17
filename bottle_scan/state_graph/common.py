@@ -28,7 +28,7 @@ def group_id(row):
 
 
 def independent(row):
-    return bool(row.get('evaluation_only') or row.get('frozen_independent') or row.get('evaluation_scope')=='post_freeze_independent')
+    return bool(row.get('data_role') == 'independent_validation' or row.get('evaluation_only') or row.get('frozen_independent') or row.get('evaluation_scope')=='post_freeze_independent')
 
 
 def group_folds(rows,n_splits=5):

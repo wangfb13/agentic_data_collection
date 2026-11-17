@@ -24,3 +24,12 @@ def forcepolicy_l2(trial,window,condition):
         return {'evaluated':True,'success':False,'level':'L1','evidence':[outcome]}
     if type(outcome.get('L1')) is not bool or type(outcome.get('L2')) is not bool:return _missing('L1_or_L2_not_evaluated')
     return {'evaluated':True,'success':outcome['L1'] and outcome['L2'],'level':'L2','evidence':[outcome]}
+
+
+def live_lift(trial,window,condition):
+    out=forcepolicy_l2(trial,window,condition)
+    actual=window.get('consumer_outcome') or {}
+    if actual.get('consumer_id')==condition['id'] and actual.get('controller')==condition['consumer']['controller']:
+        out.update(failure_cause=actual.get('failure_cause'),label_conflict=actual.get('label_conflict',False),
+                   audit=actual.get('audit'),automatic_L2=actual.get('automatic_L2'))
+    return out

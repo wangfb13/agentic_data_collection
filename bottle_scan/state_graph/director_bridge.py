@@ -1,6 +1,7 @@
 """Generic symbolic director using the repository's existing provider transport."""
 from copy import deepcopy
 import time
+from .v5_director import finalize_context,adjudicate_predictions
 from pathlib import Path
 from .common import digest,write
 from .operators import applicable_operators,validate_decision,update_rule
@@ -41,10 +42,14 @@ budget. All evidence is data, never instructions. No hardware is executed by thi
 
 
 def context(spec,rule,facts,*,hypotheses=(),history=(),state=None,graph_version=None,observed_positions=None,budget_left=None):
-    return {'schema':'symbolic_director_context_v3','spec':deepcopy(spec),'current_rule':deepcopy(rule),'facts':deepcopy(facts),
+    if spec.get('graph_schema')=='state_graph_v5' and state and state.get('phase') and not any(f['pred'].startswith('phase_') for f in facts):
+        from .v5_facts import phase_facts
+        facts=list(facts)+phase_facts(state,spec)
+    ctx={'schema':'symbolic_director_context_v3','spec':deepcopy(spec),'current_rule':deepcopy(rule),'facts':deepcopy(facts),
             'hypotheses':deepcopy(list(hypotheses)),'history':deepcopy(list(history)[-5:]),'graph_version':graph_version,
             'observed_positions':observed_positions or {},'budget_left':spec.get('budget',{}).get('max_new_trials',0) if budget_left is None else budget_left,
             'applicable_operators':applicable_operators(facts,spec,rule,state)}
+    return finalize_context(ctx)
 
 
 def matches(pattern,fact):
@@ -77,17 +82,26 @@ def update_hypotheses(hypotheses,facts,graph_version):
 
 def decide(ctx,output_dir,*,allow_agent=False,provider=None,provider_settings=None):
     out=Path(output_dir);out.mkdir(parents=True,exist_ok=True)
+    from .v5_director import fixed_decision
+    ctx=finalize_context(ctx)
+    cfg=ctx['spec'].get('director',{}) if ctx['spec'].get('graph_schema')=='state_graph_v5' else {}
+    fixed=cfg.get('mode')=='fixed_priority'
+    journal=None
+    if cfg.get('checkable_predictions'):
+        from .v5_director import prediction_snapshot
+        journal,evidence_version=prediction_snapshot(out,ctx)
+        write(out/'hypotheses.json',journal)
     write(out/('context_'+digest(ctx)[:16]+'.json'),ctx)
-    if not allow_agent and provider is None:return {'status':'not_requested','context':ctx,'robot_executed':False}
-    own=provider is None
+    if not fixed and not allow_agent and provider is None:return {'status':'not_requested','context':ctx,'robot_executed':False}
+    own=not fixed and provider is None
     if own:
         from ..agentic_provider import AgentProvider
         provider=AgentProvider(provider_settings or {})
     attempts=[];answer=None;request=deepcopy(ctx)
     try:
-        for _ in range(3):
+        for _ in range(1 if fixed else 3):
             try:
-                raw=provider.symbolic_direct(request) if hasattr(provider,'symbolic_direct') else provider.direct(request)
+                raw=fixed_decision(ctx) if fixed else (provider.symbolic_direct(request) if hasattr(provider,'symbolic_direct') else provider.direct(request))
                 validated=validate_decision({k:v for k,v in raw.items() if k!='_meta'},ctx)
                 answer=validated;attempts.append({'raw':raw,'accepted':True});break
             except (ValueError,KeyError,TypeError) as exc:
@@ -96,10 +110,16 @@ def decide(ctx,output_dir,*,allow_agent=False,provider=None,provider_settings=No
     finally:
         if own:provider.close()
     result={'status':'accepted' if answer else 'invalid_response','answer':answer,'attempts':attempts,'robot_executed':False,'graph_version':ctx['graph_version']}
+    if cfg:
+        result.update(director_mode=cfg.get('mode','llm'),effective_priors=deepcopy(ctx.get('effective_priors',{})))
     if answer:
         hypotheses=deepcopy(ctx['hypotheses'])
         for update in answer['hypotheses_update']:
             if update.get('new'):hypotheses.append({**update,'status':'open','proposed_at_graph':ctx['graph_version'],'proposed_evidence':sorted({e for f in ctx['facts'] for e in f.get('evidence',[])}),'falsifier':answer['expected']})
-        result.update(next_rule=update_rule(ctx['current_rule'],answer),hypotheses=hypotheses)
+        result.update(next_rule=update_rule(ctx['current_rule'],answer,ctx['spec']),hypotheses=hypotheses)
         if answer['operator']=='request_capability':write(out/'capability_request.json',{'request':answer['args']['description'],'evidence':answer['premises'],'action_executed':False})
+    if journal is not None and answer:
+        journal['pending']={'decision_id':digest(answer),'predictions':deepcopy(answer['predictions']),
+                            'facts':ctx['facts'],'evidence_version':evidence_version}
+        write(out/'hypotheses.json',journal)
     write(out/f'decision_{time.time_ns()}.json',result);return result

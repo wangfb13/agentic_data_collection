@@ -39,6 +39,34 @@ def read_frames(reference,count=5):
         return np.stack([np.asarray(h[reference['dataset']][int(i)]) for i in indices])
 
 
+def spatial_readout(image,tokens,patch_size,readout,grid=(2,3),temperature=1.):
+    """Frozen deterministic readouts. Coordinates are on the normalized sensor grid."""
+    import torch
+    import torch.nn.functional as F
+    if temperature<=0:raise ValueError('Readout temperature must be positive')
+    depth=image[:,:1].abs()
+    shear=torch.linalg.vector_norm(image[:,1:],dim=1,keepdim=True)
+    h,w=image.shape[-2:]
+    def coord(height,width):
+        y,x=torch.meshgrid(torch.linspace(-1,1,height,device=image.device),
+                           torch.linspace(-1,1,width,device=image.device),indexing='ij')
+        return torch.stack((x,y),dim=-1).reshape(-1,2)
+    if readout=='soft_argmax':
+        weights=torch.cat((depth,shear),1).flatten(2).div(temperature).softmax(-1)
+        return (weights@coord(h,w)).flatten(1)
+    gh,gw=h//patch_size,w//patch_size
+    if tokens is None or tokens.shape[1]!=gh*gw:raise ValueError('Missing spatial patch tokens')
+    if readout=='mean':return tokens.mean(1)
+    if readout=='grid':
+        patches=tokens.transpose(1,2).reshape(len(tokens),-1,gh,gw)
+        return F.adaptive_avg_pool2d(patches,grid).flatten(1)
+    if readout=='attention':
+        score=F.avg_pool2d(depth+shear,patch_size).flatten(1)
+        weights=(score/temperature).softmax(-1)
+        return torch.cat(((weights[:,:,None]*tokens).sum(1),weights@coord(gh,gw)),1)
+    raise ValueError('Unknown frozen tactile readout: '+str(readout))
+
+
 class FrozenEncoder:
     def __init__(self,settings):
         self.settings=dict(settings);self.artifact=json.loads(Path(settings['artifact']).read_text())
@@ -58,6 +86,9 @@ class FrozenEncoder:
                      'pool':'mean_patch_tokens_excluding_cls_before_force_projector','mask_ratio':0.,
                      'frames_per_finger':self.count,'temporal_pool':'median_of_per_frame_embeddings',
                      'representation':self.representation,'precision':'float32','baseline_subtracted':False}
+        self.readout=settings.get('readout','mean')
+        if self.readout!='mean':
+            self.recipe.update(pool=self.readout,grid=settings.get('grid',[2,3]),temperature=settings.get('temperature',1.), spatial_recipe_version=1)
         self.version='frozen_tactile_'+digest(self.recipe)
         self.cache=Path(settings['cache_dir'])/self.version
         self.model=None;self.cache_hits=0;self.computed_windows=0
@@ -96,7 +127,16 @@ class FrozenEncoder:
                 image=self.prepare(frames[start:start+batch]).to(self.device)
                 # The trained encode() uses all patches and mean pooling; it
                 # does not call the auxiliary force projector/prediction head.
-                outputs.append(self.model.encode(image).float().cpu().numpy())
+                if self.readout=='mean':
+                    result=self.model.encode(image)
+                else:
+                    patches=None
+                    if self.readout!='soft_argmax':
+                        tokens,_,restore=self.model.forward_encoder(image,mask_ratio=0.)
+                        patches=tokens[:,1:].gather(1,restore[:,:,None].expand(-1,-1,tokens.shape[-1]))
+                    result=spatial_readout(image,patches,self.artifact['model_config']['patch_size'],self.readout,
+                                           self.settings.get('grid',(2,3)),self.settings.get('temperature',1.))
+                outputs.append(result.float().cpu().numpy())
         return np.concatenate(outputs)
 
     def window(self,window):
@@ -123,7 +163,7 @@ class FrozenEncoder:
         values=compose(left,right,self.representation)
         if not np.isfinite(values).all():raise ValueError('Nonfinite tactile embedding')
         result={'values':values.tolist(),'version':self.version,'evidence':{'recipe':self.recipe,'frame_sha256':hashes,
-                'single_finger_dimension':self.dimension,'output_dimension':len(values),'cache_key':key,
+                'single_finger_dimension':len(left),'output_dimension':len(values),'cache_key':key,
                 'artifact':self.settings['artifact'],'shared_encoder':True,'robot_started':False}}
         self.cache.mkdir(parents=True,exist_ok=True);tmp=path.with_suffix('.'+str(os.getpid())+'.tmp')
         tmp.write_text(json.dumps(result,allow_nan=False,separators=(',',':'))+'\n');tmp.replace(path)
@@ -134,6 +174,9 @@ _ENCODERS={}
 
 
 def embedding(window,spec):
-    settings=spec['tactile_encoder'];key=digest(settings)
+    obs=spec.get('observation',{});settings=dict(spec['tactile_encoder'])
+    if 'tac_embed_readout' in obs:
+        settings.update(readout=obs['tac_embed_readout'],grid=obs.get('tac_grid',(2,3)),temperature=obs.get('tac_temperature',1.))
+    key=digest(settings)
     if key not in _ENCODERS:_ENCODERS[key]=FrozenEncoder(settings)
     return _ENCODERS[key].window(window)

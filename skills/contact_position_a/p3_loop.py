@@ -13,17 +13,29 @@ OUTPUT = PARENT.with_name(PARENT.name + '_forcepolicy')
 PROTOCOL = 'p3_ah_forcepolicy_lift_v1'
 
 
-def initialize(parent, out, *, extra_trials=60, consumer=None):
+def initialize(parent, out, *, extra_trials=60, consumer=None, version=4, overrides=None, ranking_report=None):
     parent, out = Path(parent).resolve(), Path(out).resolve()
     if out == parent:
         raise ValueError('The seed campaign must remain separate')
     with campaign.ownership(out):
+        if version==5:
+            from bottle_scan.state_graph.v5_profile import protect_output
+            protect_output(out,kind='P3-rounds')
         if (out/'state.json').exists():
             manifest = campaign.read(out/'continuation.json')
+            if version==4 and (out/'v5_output.json').exists():raise ValueError('This directory contains a v5 continuation')
+            if version==5 and overrides:
+                from bottle_scan.state_graph.v5_profile import merge
+                declared=manifest.get('graph_overrides',campaign.read(out/'spec.json'))
+                if merge(declared,overrides)!=declared:
+                    raise ValueError('The requested overrides differ from the frozen campaign; choose a new directory')
+            if version==5 and ranking_report and campaign.read(ranking_report)!=campaign.read(out/'spec.json')['observation'].get('ranking_report'):
+                raise ValueError('Representation evidence differs from the frozen campaign; choose a new directory')
             if manifest['source'] != str(parent) or manifest['protocol'] != PROTOCOL:
                 raise ValueError('Continuation directory belongs to another experiment')
             return
-        with campaign.ownership(parent):
+        from .ah_transition_v5 import read_source
+        with (read_source(parent) if version==5 else campaign.ownership(parent)):
             state = campaign.read(parent/'state.json')
             spec = campaign.read(parent/'spec.json')
             cfg = campaign.read(parent/'config.json')
@@ -55,10 +67,37 @@ def initialize(parent, out, *, extra_trials=60, consumer=None):
         cfg['execution']['phase'] = ('A：每条有效末次轻触交给指定 ForcePolicy，实测提起保持。'
             '先建立不纠正的对照，再用动作与结果证据补采；h 优先向上。'
             'B：计划不填动作，冻结的位置模型选不动或单轴纠正。')
-        cfg['execution']['sampling_preference']['instruction'] += cfg['execution']['phase']
+        if version==5:
+            from bottle_scan.state_graph.v5_profile import configure
+            from . import ah_v5_config, ah_geometry
+            from bottle_scan.state_graph.skill_interface import task_id
+            spec=configure(spec,overrides)
+            ah_v5_config.configure(spec,cfg)
+            if ranking_report:
+                ranking=campaign.read(ranking_report)
+                permitted={r['node_id'] for r in rows}
+                if ranking.get('schema')!='representation_ranking_v5' or not ranking.get('evidence') or not set(ranking['evidence'])<=permitted:
+                    raise ValueError('Representation report must use eligible source-campaign windows')
+                spec['observation']['ranking_report']=ranking
+            cfg['execution'].pop('phase',None)
+            cfg['execution'].pop('sampling_preference',None)
+            cfg.update(graph_version=5,development_plan=cfg['independent_plan'])
+            if spec['geometry']['horizontal_basis']:
+                validation=campaign.read(Path(__file__).with_name('rh_validation_plan.json'))
+                for cell in validation['cells']:
+                    validate_cell(cell,spec,'validate_B',{})
+                cfg.update(development_plan=validation,independent_plan=validation)
+            rows=[ah_geometry.convert_legacy_row(row,spec) for row in rows]
+            # A seed has no new consumer outcome until it has actually been evaluated.
+            for row in rows:
+                row['task_id']=task_id(spec)
+                for post in spec['post_conditions']:
+                    row.setdefault('post',{}).setdefault(post['id'],dict(evaluated=False,success=None,evidence=[]))
+        else:
+            cfg['execution']['sampling_preference']['instruction'] += cfg['execution']['phase']
         campaign.atomic(out/'continuation.json',dict(protocol=PROTOCOL,source=str(parent),
                       trials=origins,source_spent=state['spent'],seed_nodes=len(rows),
-                      source_state_digest=campaign.digest(state),new_budget=extra_trials))
+                      source_state_digest=campaign.digest(state),new_budget=extra_trials,**({'graph_overrides':overrides or {}} if version==5 else {})))
         campaign.atomic(out/'instance.json',spec)
         campaign.atomic(out/'input.json',cfg)
         campaign.initialize(out/'input.json',out,seed_rows=rows)
@@ -82,7 +121,8 @@ def exploration_context(rows,graph,facts,spec):
         'failure':sum(r['post'][cid]['success'] is False for r in direct if r['attrs']['mass_class']==mass)}
         for mass in ('light','heavy')}
     facts.append(summary)
-    for k,axis in enumerate(('a','h')):
+    axes=('r','h') if spec.get('geometry',{}).get('horizontal_basis') else ('a','h')
+    for k,axis in enumerate(axes):
         outcomes=[r for r in rows if r.get('session')=='P3' and (r.get('u_receipt') or {}).get('commanded_axis')==axis
                   and r['post'][cid]['evaluated'] and r.get('u_executed')]
         facts.append(fact('p3_measured_action_outcomes',[cid,axis],[r['node_id'] for r in outcomes],
@@ -140,6 +180,11 @@ def menu(ctx, options, state, training):
 
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--graph-version',type=int, choices=(4,5),default=5)
+    p.add_argument('--out',type=Path)
+    p.add_argument('--director-mode',choices=('llm','fixed_priority'))
+    p.add_argument('--ranking-report',type=Path)
+    p.add_argument('--overrides',type=Path,help='JSON v5 spec overrides for a fresh campaign, including measured calibrations')
     p.add_argument('--real',action='store_true')
     p.add_argument('--allow-agent',action='store_true')
     mode=p.add_mutually_exclusive_group()
@@ -147,17 +192,23 @@ def main(argv=None):
     mode.add_argument('--list-deferred',action='store_true')
     mode.add_argument('--retry-deferred',nargs='+',metavar='ID')
     args=p.parse_args(argv)
-    initialize(PARENT,OUTPUT)
-    cfg=campaign.read(OUTPUT/'config.json')
+    out=OUTPUT.with_name(OUTPUT.name+'_v5') if args.graph_version==5 else OUTPUT
+    out=args.out or out
+    if (args.director_mode or args.overrides or args.ranking_report) and args.graph_version==4:
+        p.error('Director, calibration and ranking overrides require v5')
+    overrides=campaign.read(args.overrides) if args.overrides else {}
+    if args.director_mode:overrides.setdefault('director',{})['mode']=args.director_mode
+    initialize(PARENT,out,version=args.graph_version,ranking_report=args.ranking_report,overrides=overrides)
+    cfg=campaign.read(out/'config.json')
     p3_force.load(cfg['consumer'])  # CPU-only preflight, before any robot connection
     if args.check:
-        print(campaign.read(OUTPUT/'continuation.json'))
+        print(campaign.read(out/'continuation.json'))
     elif args.list_deferred:
-        campaign_ah.show_deferred(campaign.read(OUTPUT/'state.json'))
+        campaign_ah.show_deferred(campaign.read(out/'state.json'))
     elif args.retry_deferred:
-        print(campaign.release_deferred(OUTPUT,args.retry_deferred))
+        print(campaign.release_deferred(out,args.retry_deferred))
     else:
-        state=campaign.run(OUTPUT,real=args.real,allow_agent=args.allow_agent,on_interruption=campaign_ah.offer_defer)
+        state=campaign.run(out,real=args.real,allow_agent=args.allow_agent,on_interruption=campaign_ah.offer_defer)
         print({k:state[k] for k in ('phase','spent','complete','pending')})
         campaign_ah.show_deferred(state)
 
