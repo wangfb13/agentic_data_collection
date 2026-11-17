@@ -21,6 +21,15 @@ Propose falsifiable hypotheses with support_when/refute_when fact patterns (args
 partial matches and numeric metrics intervals are supported). Only subsequent facts confirm them.
 Return JSON: hypotheses_update (array), operator (string), args (object), premises (array of fact ID
 strings), discriminates (array of hypothesis ID strings), plan, expected and reason (Chinese strings).
+When action_amplitude_coverage is present, choose any real-valued displacement inside the declared signed bounds on one axis.
+Use the measured displacements, intervals without measurements, and the stated directional preference.
+Old plans and examples do not define a grid or step size. In the reason for a transition plan, explain what a new magnitude would
+test or what uncertainty a repeat would resolve. Each measurement is relative to that trial's start.
+A small displacement supplies evidence only near its measured amplitude. You may leave gaps open.
+For conditional_next_batch_preview, propose a provisional plan for AFTER the current batch under the explicit
+preview assumption, explaining what returned evidence would change it. Pending requests carry no measured
+evidence, their budget is already reserved, and they will not run in parallel with the proposal. You may
+pause for an evidential reason that would still hold after the batch, or if no feasible plan exists.
 A collection plan has cells [{settings:{variable:value},reps:integer,blocks:[{property:value}],actions:[{kind:declared_capability,u:vector}]}].
 Use null plan for noncollection operations, including request_capability. That operator requires
 args.description. For validate_B return plan={"cluster_classes":["Ready","NeedAction"],"cells":[...]};

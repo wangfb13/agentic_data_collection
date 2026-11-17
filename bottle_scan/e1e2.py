@@ -12,7 +12,7 @@ import traceback
 import numpy as np
 import yaml
 from .e1e2_core import (defaults,load_settings,validate,plan_trials,MotionBounds,describe,
-                         Correction,LABELS,config_identity)
+                         Correction,LABELS,config_identity,opening_within_tolerance)
 from .session import atomic_json,plain,fingerprint
 
 
@@ -112,6 +112,31 @@ def rebuild_summary(root):
         w=csv.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows(rows)
     tmp.replace(p)
     return rows
+
+
+def unload_monitor(config, axes, before, lifted, hold_samples, dropped, high):
+    """Detect unloading from a measured tangential-load change during descent."""
+    load=np.median(np.stack(hold_samples),axis=0) if hold_samples else np.zeros(4)
+    amplitude=float(np.linalg.norm(load));ln=float(np.linalg.norm(lifted))
+    cosine=float(load@lifted/(amplitude*ln)) if amplitude>0 and ln>0 else 0.
+    enabled=amplitude>=config['unload_abs_sdk'] and cosine>=config['mapping_min_cosine'] and not dropped
+    details={'enabled':enabled,'source':'empirical tangential increment from pre-lift to HOLD; not calibrated base-frame vertical force',
+                                'tangent_axes':axes,'direction':(load/amplitude).tolist() if amplitude else None,'amplitude_sdk':amplitude,'lift_hold_cosine':cosine}
+    count=0;previous=None
+    def monitor(s):
+        nonlocal count,previous
+        if not enabled:return False
+        seq=tuple(s['force_sequences'])
+        if seq==previous:return False
+        previous=seq
+        value=float((s['wrench_zeroed'][:,:3][:,axes].reshape(-1)-before)@(load/amplitude))
+        descent=high-s['pose'][2,3]
+        enough=descent>=config['min_descent_mm'] and value<=amplitude*config['unload_ratio'] and amplitude-value>=config['unload_abs_sdk']
+        count=count+1 if enough else 0
+        if count>=config['frames']:
+            return True
+        return False
+    return details, monitor
 
 
 class Runner:
@@ -243,7 +268,7 @@ class Runner:
             self.engaged=True;self.hw.open();deadline=time.monotonic()+self.cfg['gripper']['timeout_s']
             while True:
                 s=self.hw.snapshot()
-                if abs(s['width']-self.cfg['gripper']['open_normalized'])<=self.cfg['gripper']['open_tolerance']:break
+                if opening_within_tolerance(s['width'],self.cfg['gripper']):break
                 if time.monotonic()>deadline:raise RuntimeError('张开超时')
                 self.hw.wait(.01)
             self.hw.hold();self.airborne=False;self.progress['airborne']=False;self.save()
@@ -468,26 +493,12 @@ class Runner:
                 self.hw.wait(.01)
             self.current['hold_complete']=True
         self.current['dropped']=self.current['dropped'] or getattr(self.hw,'hold_drop_seen',False)
-        load=np.median(np.stack(hold_samples),axis=0) if hold_samples else np.zeros(4)
-        amplitude=float(np.linalg.norm(load));ln=float(np.linalg.norm(lifted))
-        cosine=float(load@lifted/(amplitude*ln)) if amplitude>0 and ln>0 else 0.
-        enabled=amplitude>=self.cfg['lower']['unload_abs_sdk'] and cosine>=self.cfg['lower']['mapping_min_cosine'] and not self.current['dropped']
-        self.current['unload_proxy']={'enabled':enabled,'source':'empirical tangential increment from pre-lift to HOLD; not calibrated base-frame vertical force',
-                                    'tangent_axes':axes,'direction':(load/amplitude).tolist() if amplitude else None,'amplitude_sdk':amplitude,'lift_hold_cosine':cosine}
-        count=0;previous=None;high=self.hw.pose()[2,3]
+        self.current['unload_proxy'],detect=unload_monitor(self.cfg['lower'],axes,before,lifted,hold_samples,
+                                                            self.current['dropped'],self.hw.pose()[2,3])
         def monitor(s):
-            nonlocal count,previous
-            if not enabled:return False
-            seq=tuple(s['force_sequences'])
-            if seq==previous:return False
-            previous=seq
-            value=float((s['wrench_zeroed'][:,:3][:,axes].reshape(-1)-before)@(load/amplitude))
-            descent=high-s['pose'][2,3]
-            enough=descent>=self.cfg['lower']['min_descent_mm'] and value<=amplitude*self.cfg['lower']['unload_ratio'] and amplitude-value>=self.cfg['lower']['unload_abs_sdk']
-            count=count+1 if enough else 0
-            if count>=self.cfg['lower']['frames']:
-                self.current['unload_detected']=True;self.current['unload_stopped_tcp_mm']=s['pose'].tolist();return True
-            return False
+            if not detect(s):return False
+            self.current['unload_detected']=True;self.current['unload_stopped_tcp_mm']=s['pose'].tolist()
+            return True
         with self.stage('LOWER'):
             result=self.move(target,'lower',target,lower_monitor=monitor)
             if result=='reached':self.airborne=False;self.progress['airborne']=False

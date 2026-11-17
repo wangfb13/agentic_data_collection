@@ -5,7 +5,7 @@ import numpy as np
 from bottle_scan.config import demo_config, load_config, require_real_ready, unresolved
 from bottle_scan.geometry import (axis_basis, check_pose, check_segment, interface_units,
     lift_base, pose_offset, rotation, translate_local, box_cylinder_collision,
-    _box, _cylinder_prism)
+    _box, _cylinder_prism, interpolate, pose_error)
 from bottle_scan.design import commissioning_trials, contact_trials, visual_points
 
 
@@ -21,6 +21,30 @@ class GeometryTests(unittest.TestCase):
         result = pose_offset(T0, [10, 20, 30], "c", 45)
         np.testing.assert_allclose(result[:3, 3], [80, 210, 330], atol=1e-9)
         np.testing.assert_allclose(result[:3, :3], T0[:3, :3] @ rotation([0, 1, 0], 45), atol=1e-9)
+
+    def test_translation_at_recorded_p2_orientation(self):
+        start = np.eye(4)
+        start[:3, :3] = [
+            [0.32820015852355794, 0.45236247280741937, 0.8292483639662293],
+            [0.17871057816263003, -0.8917567349383024, 0.415731229215411],
+            [0.9275490203746052, 0.011752399233128352, -0.37351666082569235]]
+        end = start.copy()
+        end[:3, 3] = [.5644, -.1974, .5382]
+        self.assertEqual(pose_error(start, end)[1], 0.)
+        for fraction in (0., .5, 1.):
+            pose = interpolate(start, end, fraction)
+            np.testing.assert_allclose(pose[:3, :3], start[:3, :3], atol=1e-14, rtol=0)
+            np.testing.assert_allclose(pose[:3, 3], fraction * end[:3, 3])
+
+    def test_interpolation_retains_small_and_near_half_turns(self):
+        axis = [-1, 2, -3]
+        for degrees in (1e-6, -1e-6, 179.99999, -179.99999):
+            end = np.eye(4)
+            end[:3, :3] = rotation(axis, degrees)
+            half = interpolate(np.eye(4), end, .5)
+            np.testing.assert_allclose(half[:3, :3], rotation(axis, degrees / 2), atol=1e-12, rtol=0)
+        with self.assertRaisesRegex(ValueError, 'invalid rotation axis'):
+            rotation([0, 0, 0], 1)
 
     def test_axes_and_base_lift(self):
         axes = {"a": [0, 0, -1], "c": [0, 1, 0], "l": [1, 0, 0]}

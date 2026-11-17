@@ -13,6 +13,12 @@ LABELS = {'': 'normal', '1': 'normal', '2': 'tilted', '3': 'pushed',
           '4': 'dropped', '5': 'slipped', '0': 'invalid'}
 
 
+def opening_within_tolerance(normalized, gripper):
+    """Use inclusive endpoints so the 999/1000 readback passes a one-count tolerance."""
+    target, tolerance = gripper['open_normalized'], gripper['open_tolerance']
+    return target - tolerance <= normalized <= target + tolerance
+
+
 def defaults():
     return {
         'schema': 'e1e2_config_v1', 'arm': 'right',

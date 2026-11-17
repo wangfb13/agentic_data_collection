@@ -63,8 +63,23 @@ def post_spec(spec,condition=None):
     return next(p for p in spec['post_conditions'] if p['id']==condition)
 
 
-def action_grid(spec):
+def action_grid(spec, observed=()):
     space=spec['task']['action_space'];limits=np.asarray(spec['safety_envelope']['max_action'],float)
+    continuous = space.get('continuous_displacement_variables')
+    if continuous:
+        # The director chooses freely. Offline model queries reuse legal measured actions
+        # instead of inventing a Cartesian product of fixed levels.
+        bounds = np.asarray([spec['perturbation_variables'][k]['envelope'] for k in continuous])
+        values = set()
+        for edge in observed:
+            receipt = edge.get('receipt') or {}
+            if edge['kind'] != 'observed' or receipt.get('applied') is not True:
+                continue
+            u = np.asarray(receipt.get('net_contact_displacement_mm'), dtype=float)
+            if (u.shape == limits.shape and np.count_nonzero(u) == 1 and np.isfinite(u).all()
+                    and np.all(u >= bounds[:, 0]) and np.all(u <= bounds[:, 1])):
+                values.add(tuple(u))
+        return np.asarray(sorted(values), dtype=float).reshape(-1, space['dim'])
     values=space.get('candidate_actions')
     if values is None:
         levels=space.get('candidate_levels') or [[-float(x),0.,float(x)] for x in limits]

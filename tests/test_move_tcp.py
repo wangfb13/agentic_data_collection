@@ -95,6 +95,39 @@ class MoveTcpTests(unittest.TestCase):
     def args(self, *extra):
         return cli.validate_args(cli.parser().parse_args(["--log-dir", str(self.path / "logs"), *extra]))
 
+    def test_relative_at_confirm_uses_latest_translation_and_tcp_rotation(self):
+        arm=FakeArm()
+        fresh=np.eye(4)
+        fresh[:3,3]=[.3,-.2,.1]
+        fresh[:3,:3]=rotation([0,1,0],.8)
+        def confirm(_):
+            arm.pose=fresh.copy()
+            return 'MOVE'
+        code,_,_,_=self.main(['--real','--relative-at-confirm','--frame','tcp','--direction','z+',
+                              '--distance-mm','10','--max-distance-mm','10'],arm,confirm)
+        self.assertEqual(code,0)
+        r=self.records()[0]
+        target=np.asarray(r['target_mm'])
+        np.testing.assert_allclose(target[:3,3],fresh[:3,3]+10*fresh[:3,2])
+        np.testing.assert_allclose(target[:3,:3],fresh[:3,:3])
+        np.testing.assert_allclose(np.asarray(r['preview_target_mm'])[:3,3],[0,0,10])
+        self.assertEqual(r['frame_semantics'],'action_start_v1')
+        with self.assertRaises(ValueError):
+            self.args('--relative-at-confirm','--xyz-mm','0','0','0')
+
+    def test_base_height_envelope_limits_relative_and_absolute_targets(self):
+        args=self.args("--frame","base","--direction","z+","--distance-mm","45","--base-z-range-mm","-3","45")
+        start=np.eye(4);start[2,3]=.8
+        _,end=cli.build_target(args,state(start))
+        np.testing.assert_allclose(end[:3,3],[0,0,45])
+        start[2,3]=3
+        with self.assertRaisesRegex(ValueError,"基座高度"):
+            cli.build_target(args,state(start))
+        with self.assertRaisesRegex(ValueError,"基座高度"):
+            cli.build_target(self.args("--xyz-mm","0","0","-4","--base-z-range-mm","-3","45"),state())
+        with self.assertRaises(ValueError):
+            self.args("--base-z-range-mm","45","-3")
+
     def main(self, args, arm=None, input_fn=lambda _: "MOVE", ownership_guard=empty_ownership,
              ownership_inspector=empty_ownership):
         arm = arm or FakeArm()

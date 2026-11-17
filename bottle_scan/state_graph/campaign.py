@@ -1,11 +1,13 @@
 """Persistent graph/director/collection/consumer/B loop. Hardware is opt-in."""
 import argparse
+from collections import deque
 from contextlib import contextmanager
 from copy import deepcopy
 import fcntl
 import json
 from pathlib import Path
 import time
+import traceback
 import joblib
 from .common import digest, clean, independent
 from .skill_interface import load_spec, load_callable, task_id, normalize_action
@@ -37,14 +39,15 @@ def ownership(out):
         yield
 
 
-def initialize(config,out):
+def initialize(config,out,*,seed_rows=None):
     out=Path(out).resolve();cfg=read(config);spec=load_spec(cfg['spec'])
     if (out/'state.json').exists():
         if read(out/'config.json')!=cfg:raise ValueError('Existing campaign configuration differs; resume it or use a new output')
         return read(out/'state.json')
     prepare=spec['adapters'].get('campaign_prepare')
     if prepare:spec=load_callable(prepare)(spec,cfg)
-    rows=[]
+    rows=list(seed_rows or [])
+    if seed_rows is not None and cfg.get('sources'):raise ValueError('Choose a single source of seed evidence')
     if cfg.get('sources'):rows,_=extract_nodes(cfg['sources'],spec,out/'initial_extraction')
     rows=[r for r in rows if r['task_id']==task_id(spec) and not independent(r)]
     atomic(out/'config.json',cfg);atomic(out/'spec.json',spec);atomic(out/'seed_nodes.json',rows)
@@ -171,34 +174,64 @@ def retry_archive(out, trial):
     return Path(out)/'incomplete_attempts'/trial['trial_id']/str(trial['started_ns'])
 
 
-def requeue_attempt(out, state, trial, reason):
+def requeue_attempt(out, state, trial, reason, *, defer=False):
     directory = Path(trial['directory'])
     archive = retry_archive(out, trial)
     # Keeping the receipt with the original directory makes an interrupted move
     # recoverable even if the process dies before the state file is committed.
     if not (archive/'retry.json').exists():
         archive.parent.mkdir(parents=True, exist_ok=True)
-        atomic(directory/'retry.json', {'trial_id': trial['trial_id'], 'reason': reason})
+        if not (directory/'retry.json').exists():
+            receipt = {'trial_id': trial['trial_id'], 'reason': reason}
+            if defer:
+                receipt.update(disposition='deferred', started_ns=trial['started_ns'], deferred_ns=time.time_ns())
+            atomic(directory/'retry.json', receipt)
         directory.rename(archive)
     receipt = read(archive/'retry.json')
     if receipt['trial_id'] != trial['trial_id']:
         raise ValueError('Retry receipt belongs to another trial')
     atomic(directory/'request.json', trial['request'])
     trial.setdefault('incomplete_attempts', []).append({**receipt, 'archive': str(archive)})
-    trial['status'] = 'queued'
+    deferred = receipt.get('disposition') == 'deferred'
+    trial['status'] = 'deferred' if deferred else 'queued'
     trial.pop('started_ns')
     trial.pop('error', None)
     state['spent']['trials'] -= 1
     state['phase'] = 'ready_to_collect'
     atomic(Path(out)/'state.json', state)
-    print(f"[graph-loop] {trial['trial_id']} 本次未计数，保留同一试次。{receipt['reason']}", flush=True)
+    label = '已暂缓，保留记录，继续本批下一条' if deferred else '本次未计数，保留同一试次'
+    print(f"[graph-loop] {trial['trial_id']} {label}。{receipt['reason']}", flush=True)
 
 
-def collect_pending(out,state,spec,cfg,*,real=False,executor=None,interactive=True):
+def deferred_trials(state):
+    ids = set((state.get('pending') or {}).get('trial_ids', []))
+    return [t for t in state['trials'] if t['trial_id'] in ids and t['status'] == 'deferred']
+
+
+def release_deferred(out, selected):
+    # Restore only original requests in the current batch. No dispatch or new plan.
+    out = Path(out)
+    with ownership(out):
+        state = read(out/'state.json')
+        deferred = {t['trial_id']: t for t in deferred_trials(state)}
+        ids = set(deferred) if selected == ['all'] else set(selected)
+        if ids - deferred.keys():
+            raise ValueError('试次不在本批暂缓清单：' + ', '.join(sorted(ids - deferred.keys())))
+        if ids:
+            for ident in ids:
+                deferred[ident]['status'] = 'queued'
+            state['phase'] = 'ready_to_collect'
+            atomic(out/'state.json', state)
+        return sorted(ids)
+
+
+def collect_pending(out,state,spec,cfg,*,real=False,executor=None,interactive=True,on_interruption=None):
     pending=state['pending'];ids=set(pending['trial_ids'])
     fn=executor
-    for trial in state['trials']:
-        if trial['trial_id'] not in ids or trial['status']=='complete':continue
+    remaining=deque(t for t in state['trials']
+                    if t['trial_id'] in ids and t['status'] not in ('complete','deferred'))
+    while remaining:
+        trial=remaining.popleft()
         directory=Path(trial['directory']);result_path=directory/'result.json'
         if result_path.exists():accept_result(out,state,trial,spec);continue
         if trial['status']=='started':
@@ -206,31 +239,59 @@ def collect_pending(out,state,spec,cfg,*,real=False,executor=None,interactive=Tr
             receipt = next((p for p in (archive/'retry.json', directory/'retry.json') if p.exists()), None)
             if receipt:
                 requeue_attempt(out, state, trial, read(receipt)['reason'])
-            else:
-                recover_name=spec['adapters'].get('campaign_recover')
-                try:
-                    result=load_callable(recover_name)(trial['request'],directory,spec,cfg,interactive=interactive) if recover_name else None
-                except RetryTrial as exc:
-                    requeue_attempt(out, state, trial, str(exc))
-                else:
-                    if result:
-                        atomic(result_path,result);accept_result(out,state,trial,spec);continue
-                    state['phase']='awaiting_result';atomic(Path(out)/'state.json',state);return
-        if not real and executor is None:
-            state['phase']='ready_to_collect';atomic(Path(out)/'state.json',state);return
-        trial['status']='started';trial['started_ns']=time.time_ns();state['spent']['trials']+=1
-        state['robot_started']=bool(state['robot_started'] or real);atomic(Path(out)/'state.json',state)
+                if trial['status'] == 'deferred':
+                    continue
+
+        recovering = trial['status'] == 'started'
+        if not recovering:
+            if not real and executor is None:
+                state['phase']='ready_to_collect';atomic(out/'state.json',state);return
+            trial['status']='started';trial['started_ns']=time.time_ns();state['spent']['trials']+=1
+            state['robot_started']=bool(state['robot_started'] or real);atomic(out/'state.json',state)
+        choose = on_interruption if interactive else None
         try:
-            if fn is None:fn=load_callable(spec['adapters']['campaign_executor'])
-            result=fn(trial['request'],directory,spec,cfg,real=real,interactive=interactive)
+            if recovering:
+                name=spec['adapters'].get('campaign_recover')
+                result=load_callable(name)(trial['request'],directory,spec,cfg,interactive=interactive) if name else None
+            else:
+                if fn is None:fn=load_callable(spec['adapters']['campaign_executor'])
+                result=fn(trial['request'],directory,spec,cfg,real=real,interactive=interactive)
         except RetryTrial as exc:
-            requeue_attempt(out, state, trial, str(exc))
+            reason = str(exc)
+            defer = bool(choose and choose(trial, reason))
+            requeue_attempt(out, state, trial, reason, defer=defer)
+            if defer:
+                continue
+            # Legacy recovery of a classified interruption may retry in this same invocation.
+            if recovering and choose is None:
+                remaining.appendleft(trial)
+                continue
             return
         except BaseException as exc:
-            trial['error']=str(exc);state['phase']='awaiting_result';atomic(Path(out)/'state.json',state);raise
+            reason = str(exc) or type(exc).__name__
+            trial['error']=reason;state['phase']='awaiting_result';atomic(out/'state.json',state)
+            if not isinstance(exc, Exception) or not choose:
+                raise
+            atomic(directory/'exception.json', {
+                'reason': reason, 'traceback': traceback.format_exc(),
+                'child_stderr': getattr(exc, 'stderr', None) if isinstance(getattr(exc, 'stderr', None), str) else None,
+            })
+            if choose(trial, reason):
+                requeue_attempt(out, state, trial, reason, defer=True)
+                continue
+            return
         if result is None:
-            state['phase']='awaiting_result';atomic(Path(out)/'state.json',state);return
+            state['phase']='awaiting_result';atomic(out/'state.json',state)
+            reason = trial.get('error') or '上次执行没有可结算结果'
+            if choose and choose(trial, reason):
+                requeue_attempt(out, state, trial, reason, defer=True)
+                continue
+            return
         atomic(result_path,result);accept_result(out,state,trial,spec)
+    if deferred_trials(state):
+        state['phase']='deferred_review'
+        atomic(out/'state.json',state)
+        return
     state['last_batch']=state['pending'];state['pending']=None;state['phase']='analyze';atomic(Path(out)/'state.json',state)
 
 
@@ -259,7 +320,7 @@ def source_comparison(out, batch, trials, rows, condition):
                'measured_actions': result.get('measured_actions', [r.get('u_executed') for r in nodes if (r.get('u_receipt') or {}).get('applied')]),
                'attempt_reason': result.get('attempt_reason'),
                'initial_node': first['node_id'] if first else None,
-               'actual_initial_coords': {k:x for k in ('a_offset_mm','l_offset_mm') if (x:=coordinate_evidence(first,k)) is not None} if first else None,
+               'actual_initial_coords': {k:x for k in ('a_offset_mm','l_offset_mm','h_offset_mm') if (x:=coordinate_evidence(first,k)) is not None} if first else None,
                'distance_to_source': None, 'source_matched': None, 'prior_success_groups_nearby': None,
                'consumer_success': terminal['post'][condition]['success'] if terminal else None,
                'consumer_level': terminal['post'][condition].get('level') if terminal else None}
@@ -285,6 +346,10 @@ def next_decision(out,state,spec,cfg,allow_agent,provider=None):
         result=evaluate_B(assessments(state,'independent',frozen['model_id']),spec,'independent',model_id=frozen['model_id'])
         facts+=result['facts'];atomic(out/'independent_acceptance.json',result)
         if not result['passed'] and state.get('last_batch',{}).get('role')=='independent':
+            on_gap=spec['adapters'].get('after_independent_gap')
+            if on_gap and load_callable(on_gap)(out,state,spec,result):
+                # The failed confirmation remains sealed. Build the next menu from development data.
+                return next_decision(out,state,spec,cfg,allow_agent,provider)
             state['phase']='independent_failed';state['independent_result']=result;atomic(out/'state.json',state);return None
     elif state.get('model') and state.get('last_batch',{}).get('role')=='development' and not state.pop('retrain_requested',False):
         # Repeated B batches test the same candidate until the director chooses
@@ -301,7 +366,7 @@ def next_decision(out,state,spec,cfg,allow_agent,provider=None):
         built=build(rows,spec,dest,validate=False,previous_clusters=previous)
         graph=built['graph'];facts=built['facts'];training=built['training'];previous=built['clusters']
         prior=state.get('model')
-        if prior:
+        if prior and prior['model_id'] not in state.get('retired_candidates',[]):
             result=evaluate_B(assessments(state,'development',prior['model_id']),spec,'development',model_id=prior['model_id'])
             # A passed development candidate is frozen exactly as tested, before
             # incorporating its B outcomes into any new fitted model.
@@ -311,10 +376,19 @@ def next_decision(out,state,spec,cfg,allow_agent,provider=None):
         state['model']={'bundle':str((dest/'models/bundle.joblib').resolve()),'model_id':built['bundle']['model_id'],
                         'clusters':str((dest/'clusters.json').resolve()),'facts':facts,'trained':training['active_model_trained']}
         state['hypotheses']=update_hypotheses(state['hypotheses'],facts,graph['graph_version'])
+    enrich=spec['adapters'].get('exploration_context')
+    if enrich:
+        facts, collection_ops = load_callable(enrich)(rows,graph,facts,spec)
     positions=observed_positions(rows,spec)
     ctx=context(spec,state['rule'],facts,hypotheses=state['hypotheses'],history=state['history'],
                 state={'frozen_independent':bool(state['frozen'])},graph_version=graph['graph_version'],
                 observed_positions=positions,budget_left=spec['budget']['max_new_trials']-state['spent']['trials'])
+    if enrich:
+        menu=spec['adapters'].get('campaign_menu')
+        if menu:
+            load_callable(menu)(ctx, collection_ops, state, training)
+        else:
+            ctx['applicable_operators']=collection_ops
     # Honest executor capabilities, not hypothetical actions that only translate a plan.
     if state['frozen']:ctx['independent_plan']=state['frozen']['independent_plan']
     ctx['execution']=cfg.get('execution',{})
@@ -352,7 +426,8 @@ def apply_decision(out,state,spec,answer):
         queue_plan(out,state,spec,decision['plan'],role)
     elif op=='freeze':
         candidate=state.get('candidate_to_freeze')
-        if not candidate:raise ValueError('No development-passed candidate to freeze')
+        if not candidate or candidate['model_id'] in state.get('retired_candidates',[]):
+            raise ValueError('No eligible development-passed candidate to freeze')
         plan=deepcopy(read(Path(out)/'config.json').get('independent_plan') or state['last_batch']['plan'])
         count=len(expand_plan(plan,spec));minimum=spec['acceptance']['independent_B'].get('min_trials',count)
         if count<minimum:
@@ -372,14 +447,14 @@ def apply_decision(out,state,spec,answer):
     atomic(Path(out)/'state.json',state)
 
 
-def run(out,*,real=False,allow_agent=False,provider=None,executor=None,interactive=True,max_decisions=50):
+def run(out,*,real=False,allow_agent=False,provider=None,executor=None,interactive=True,max_decisions=50,on_interruption=None):
     out=Path(out).resolve()
     with ownership(out):
         state=read(out/'state.json');spec=load_spec(out/'spec.json');cfg=read(out/'config.json')
         for _ in range(max_decisions):
             if state['complete']:break
             if state['pending']:
-                collect_pending(out,state,spec,cfg,real=real,executor=executor,interactive=interactive)
+                collect_pending(out,state,spec,cfg,real=real,executor=executor,interactive=interactive,on_interruption=on_interruption)
                 if state['pending']:break
             if state['spent']['trials']>=spec['budget']['max_new_trials'] and not state.get('frozen'):
                 state['phase']='budget_exhausted';atomic(out/'state.json',state);break

@@ -51,10 +51,14 @@ def parser():
     targets.add_argument("--direction", choices=("x+", "x-", "y+", "y-", "z+", "z-"))
     p.add_argument("--distance-mm", type=positive, default=5.)
     p.add_argument("--frame", choices=("base", "tcp"), default="base")
+    p.add_argument("--relative-at-confirm", action="store_true",
+                   help="确认后用动作开始时的实测位姿重新生成相对平移目标")
     p.add_argument("--quaternion-xyzw", nargs=4, type=float, metavar=("QX", "QY", "QZ", "QW"))
     p.add_argument("--speed-mm-s", type=positive, default=5.)
     p.add_argument("--angular-speed-deg-s", type=positive, default=5.)
     p.add_argument("--max-distance-mm", type=positive, default=None, help="可选：限制本次最大平移，默认不设单次距离上限")
+    p.add_argument("--base-z-range-mm", nargs=2, type=float, metavar=("LOW", "HIGH"),
+                   help="目标 TCP 的 base_link 高度范围（毫米）")
     p.add_argument("--max-angle-deg", type=positive, default=None, help="可选：限制本次最大旋转，默认不设单次角度上限")
     p.add_argument("--timeout-s", type=positive, default=None, help="可选：移动等待时间；默认根据距离、角度和速度估算")
     p.add_argument("--pose-tolerance-mm", type=positive, default=2., help="实测 TCP 到位位置容差，默认 2 mm")
@@ -64,6 +68,12 @@ def parser():
 
 
 def validate_args(args):
+    if args.relative_at_confirm and args.direction is None and args.delta_mm is None:
+        raise ValueError("--relative-at-confirm requires a relative direction or delta")
+    if args.base_z_range_mm is not None:
+        lo,hi=args.base_z_range_mm
+        if not np.isfinite([lo,hi]).all() or lo>=hi:
+            raise ValueError("基座高度范围须为有限且递增的上下界")
     if args.quaternion_xyzw is not None and args.xyz_mm is None:
         raise ValueError("--quaternion-xyzw 只能与 --xyz-mm 一起使用")
     for name in ("xyz_mm", "delta_mm", "quaternion_xyzw"):
@@ -141,7 +151,17 @@ def build_target(args, state):
         delta = np.asarray(delta, dtype=float)
         if delta.shape != (3,) or not np.all(np.isfinite(delta)):
             raise ValueError("位移必须是三个有限数值，单位 mm")
-        target[:3, 3] += current[:3, :3] @ delta if args.frame == "tcp" else delta
+        delta_base=current[:3,:3] @ delta if args.frame=="tcp" else delta
+        if args.base_z_range_mm is not None and abs(delta_base[2])>1e-9:
+            lo,hi=args.base_z_range_mm
+            z=current[2,3]
+            dest_z=z+delta_base[2]
+            if dest_z<lo or dest_z>hi:
+                fraction=(np.clip(dest_z,lo,hi)-z)/delta_base[2]
+                # Account for measured drift at an endpoint without changing the translation direction.
+                if 0<fraction<1 and np.linalg.norm(delta_base)*(1-fraction)<=args.pose_tolerance_mm+1e-9:
+                    delta_base=delta_base*fraction
+        target[:3, 3] += delta_base
     validate_transform(target)
     check_limits(args, current, target)
     return current, target
@@ -149,6 +169,10 @@ def build_target(args, state):
 
 def check_limits(args, current, target):
     distance, angle = pose_error(current, target)
+    if args.base_z_range_mm is not None:
+        lo,hi=args.base_z_range_mm
+        if not lo-1e-9<=target[2,3]<=hi+1e-9:
+            raise ValueError("目标超出基座高度范围")
     if not math.isfinite(distance) or not math.isfinite(angle):
         raise ValueError("无法计算有限的目标距离或角度")
     if ((args.max_distance_mm is not None and distance > args.max_distance_mm + 1e-9) or
@@ -319,18 +343,21 @@ class MoveSession:
                     self.output("已取消；未发送 TCP。")
                     return "operator_cancelled"
                 self.wait_subscriber()
+                if self.ownership_check is None:
+                    raise RuntimeError("未提供命令发布者检查；拒绝发送 TCP")
+                record["command_ownership_before_move"] = self.ownership_check()
                 fresh = self.observation()
                 fresh_pose = measured_pose(fresh, self.args.arm)
                 drift_mm, drift_deg = pose_error(current, fresh_pose)
                 record["confirmed_observation"] = fresh
                 if drift_mm > 1. or drift_deg > 1.:
                     raise ValueError("确认期间起点变化超过 1 mm / 1 deg；旧目标已拒绝，请刷新并重新选择")
+                if target_args.relative_at_confirm:
+                    record["preview_target_mm"] = target.tolist()
+                    _, target = build_target(target_args, fresh)
+                    record.update(target_mm=target.tolist(), relative_frame=target_args.frame,
+                                  frame_semantics="action_start_v1")
                 check_limits(self.args, fresh_pose, target)
-                # Re-read the master after the human wait. A second controller
-                # may have started while this target was being reviewed.
-                if self.ownership_check is None:
-                    raise RuntimeError("未提供命令发布者检查；拒绝发送 TCP")
-                record["command_ownership_before_move"] = self.ownership_check()
                 record["execution_start_mm"] = fresh_pose.tolist()
                 record["result"] = "submitted"
                 save()

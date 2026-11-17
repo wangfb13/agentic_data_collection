@@ -98,6 +98,10 @@ def validate_decision(answer,context):
         if len(actions)>spec.get('runtime',{}).get('max_steps',3):raise ValueError('Too many actions in one trial')
         if op=='collect_transitions' and not actions:raise ValueError('Transition collection requires explicit actions')
         if op=='validate_B' and actions:raise ValueError('B executes the frozen candidate, not scripted corrections')
+        validator=spec.get('adapters',{}).get('validate_collection_cell')
+        if validator:
+            from .skill_interface import load_callable
+            load_callable(validator)(cell,spec,op,args)
         count+=cell['reps']*len(blocks)
         for key,value in context.get('execution',{}).get('fixed_settings',{}).items():
             if key in settings and settings[key]!=value:raise ValueError('Setting differs from the selected consumer protocol: '+key)

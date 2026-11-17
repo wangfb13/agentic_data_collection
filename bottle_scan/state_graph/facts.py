@@ -128,8 +128,8 @@ def generate_facts(graph,rows,labels,clusters,noise,spec,models=None):
                     facts.append(fact('high_disagreement',[cluster['cluster_id']],cluster['node_ids'],{'std':v['std'],'threshold':ms['V']['uncertainty_q90']}))
             dm=models['dynamics']
             if dm.get('status')=='trained':
-                uncertainty=max(predict(dm,representative,u)['uncertainty'] for u in action_grid(spec))
-                if uncertainty>dm['uncertainty_q90']:
+                uncertainty=max((predict(dm,representative,u)['uncertainty'] for u in action_grid(spec,graph['edges'])), default=None)
+                if uncertainty is not None and uncertainty>dm['uncertainty_q90']:
                     facts.append(fact('dynamics_uncertain',[cluster['cluster_id']],cluster['node_ids'],{'uncertainty':uncertainty,'threshold':dm['uncertainty_q90']}))
         if ms['pi'].get('status')!='trained' or models['dynamics'].get('status')!='trained':
             facts.append(fact('transition_evidence_missing',[active],[r['node_id'] for r in rows],{'policy_samples':ms['pi'].get('n',0),'transition_samples':models['dynamics'].get('n',0),'requires':'before, typed executed action receipt, after, actual consumer outcome'}))

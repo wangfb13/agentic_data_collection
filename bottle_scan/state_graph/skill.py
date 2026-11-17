@@ -31,7 +31,7 @@ def train_models(rows,graph,labels,noise,dynamics,spec,out=None):
 def optional_plan(bundle,row,policy_prediction):
     spec=bundle['spec'];cfg=spec.get('planning',{})
     if not cfg.get('enabled',False) or bundle['dynamics'].get('status')!='trained':return None
-    cid=spec['active_post_condition'];candidate=np.asarray(policy_prediction['u']);grid=action_grid(spec)
+    cid=spec['active_post_condition'];candidate=np.asarray(policy_prediction['u']);grid=action_grid(spec,bundle['graph']['edges'])
     radius=cfg.get('radius',float(np.max(spec['safety_envelope']['max_action']))/2)
     choices=[]
     for u in grid:

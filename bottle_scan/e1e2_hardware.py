@@ -13,6 +13,7 @@ import time
 import numpy as np
 import yaml
 from .backend import Sample
+from .e1e2_core import opening_within_tolerance
 from .hardware_gripper import RosNormalizedGripperObserver, load_legacy_force_functions
 from .hardware_sensors import SdkWrenchProjection
 from .recording import AsyncRecorder
@@ -441,12 +442,12 @@ class Hardware:
         deadline=time.monotonic()+seconds
         while time.monotonic()<deadline:self.check();time.sleep(min(.01,max(0.,deadline-time.monotonic())))
     def zero_unloaded(self):
-        g=self.grip.fresh();openv=self.cfg['gripper']['open_normalized']
-        if abs(g['normalized']-openv)>self.cfg['gripper']['open_tolerance']:raise RuntimeError('扣零需要已全开；当前读数 '+str(g['normalized']))
+        g=self.grip.fresh()
+        if not opening_within_tolerance(g['normalized'],self.cfg['gripper']):raise RuntimeError('扣零需要已全开；当前读数 '+str(g['normalized']))
         start=self.now();n=self.cfg['zero']['frames']
         def monitor():
             self.check()
-            if abs(self.grip.fresh()['normalized']-openv)>self.cfg['gripper']['open_tolerance']:raise RuntimeError('扣零期间夹爪开度改变')
+            if not opening_within_tolerance(self.grip.fresh()['normalized'],self.cfg['gripper']):raise RuntimeError('扣零期间夹爪开度改变')
         samples=self.sensors.collect_raw_zero_samples(n,self.cfg['zero']['timeout_s'],monitor=monitor)
         means=[];std=[]
         for s in SIDES:
@@ -547,7 +548,7 @@ class Hardware:
         deadline=time.monotonic()+self.cfg['gripper']['timeout_s']
         while time.monotonic()<deadline:
             g=self.grip.fresh()
-            if abs(g['normalized']-self.cfg['gripper']['open_normalized'])<=self.cfg['gripper']['open_tolerance']:self.grip.hold();return
+            if opening_within_tolerance(g['normalized'],self.cfg['gripper']):self.grip.hold();return
             # If acquisition worker died, a force-independent one-way opening
             # tick avoids a dead force read preventing pre-lift release.
             if self.error:

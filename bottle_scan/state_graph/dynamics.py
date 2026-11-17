@@ -152,7 +152,7 @@ def inferred_cost(uncertainty,p_off,spec):
 
 def inferred_edges(rows,model,noise,spec,observed):
     existing={(e['source'],e['target']) for e in observed};best={}
-    targets=np.array([target_vector(r,model['targets']) for r in rows]);actions=action_grid(spec)
+    targets=np.array([target_vector(r,model['targets']) for r in rows]);actions=action_grid(spec,observed)
     limit=spec.get('dynamics',{}).get('max_uncertainty',1.)
     for source in rows:
         for u in actions:

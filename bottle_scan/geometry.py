@@ -141,15 +141,21 @@ def lift_base(T, height_mm):
 
 
 def _rotation_vector(R):
-    angle = math.acos(float(np.clip((np.trace(R) - 1) / 2, -1, 1)))
+    # R_start.T @ R_start is symmetric, but its trace can round below 3.
+    # Use the antisymmetric part for sin(angle) so an unchanged pose has angle 0.
+    skew = 0.5 * np.array([R[2, 1] - R[1, 2], R[0, 2] - R[2, 0], R[1, 0] - R[0, 1]])
+    sine = np.linalg.norm(skew)
+    angle = math.atan2(sine, float(np.clip((np.trace(R) - 1) / 2, -1, 1)))
     if angle < 1e-10:
         return np.array([1., 0, 0]), 0.
     if math.pi - angle < 1e-6:
         vals, vecs = np.linalg.eig(R)
         axis = np.real(vecs[:, np.argmin(np.abs(vals - 1))])
         axis /= np.linalg.norm(axis)
+        if np.dot(axis, skew) < 0:
+            axis = -axis
     else:
-        axis = np.array([R[2, 1] - R[1, 2], R[0, 2] - R[2, 0], R[1, 0] - R[0, 1]]) / (2 * math.sin(angle))
+        axis = skew / sine
     return axis, angle
 
 
