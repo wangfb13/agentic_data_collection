@@ -5,7 +5,7 @@ from .common import digest
 from .v5_facts import continuous,number
 
 FRONTIER={'probe_recovery_frontier','request_expert_recovery'}
-NEW_COLLECTION=FRONTIER|{'recalibrate_reference'}
+NEW_COLLECTION=FRONTIER|{'recalibrate_reference','probe_amplitude'}
 
 
 def revise(out,facts,spec,rule,state):
@@ -81,12 +81,15 @@ def revise(out,facts,spec,rule,state):
         for f in get('representation_ranking'):
             for name in f['metrics'].get('selectable',[]):
                 add('select_representation',[f],representation=name)
+    if cfg.get('amplitude_coverage') or spec.get('director',{}).get('score_based_axis_choice'):
+        from .axis_planning import targeted_offers
+        out = targeted_offers(out,facts,spec,rule)
     phases=[f for f in facts if f['pred'].startswith('phase_')]
     if phases:
         ph=phases[-1];phase=ph['pred'][6:]
         if phase=='plan' and spec.get('loop',{}).get('rounds'):
             out[:]=[o for o in out if o['op'] not in ('validate_B','train','freeze','complete')]
-            if not any(o['op']=='collect_outcomes' for o in out):
+            if not any(o['op']=='collect_outcomes' for o in out) and not (spec['director'].get('score_based_axis_choice') and get('development_class_missing')):
                 add('collect_outcomes',[ph],post_condition=cid)
         elif phase=='dev_validate':
             out[:]=[o for o in out if o['op'] in ('validate_B','pause')]
@@ -100,6 +103,15 @@ def revise(out,facts,spec,rule,state):
 
 
 def next_probe(metrics,spec,var,side):
+    if 'inner_mm' in metrics:
+        sign = 1 if side=='positive' else -1
+        lo, hi = metrics['inner_mm'], metrics['outer_mm']
+        initial = spec['director']['initial_frontier_step_mm']
+        # Bisect an interior hole. For the open outer gap, double the last
+        # contiguous covered edge; the first unmeasured bin starts at zero.
+        distance = ((lo+hi)/2 if metrics['covered_beyond'] else
+                    min(hi, 2*lo if lo else initial))
+        return metrics['reference_mm'] + sign*distance
     if spec.get('facts',{}).get('rate_based_frontier') and 'bins' in metrics:
         from .frontier_rates import next_bin
         return next_bin(metrics,spec,var,side)
@@ -175,6 +187,31 @@ def validate(answer,ctx):
         for k,(lo,hi) in a['intervals'].items():
             if any(not lo<=c['settings'].get(k,float('inf'))<=hi for c in cells):
                 raise ValueError('Transition start must belong to the bound cluster')
+    if op=='probe_amplitude':
+        matching = [f for f in ctx['facts'] if f['id'] in answer['premises'] and f['pred']=='amplitude_gap'
+                    and f['args']==[a['var'],a['side'],a['interval']] and f['metrics']['consumer']==a['post_condition']]
+        if len(matching)!=1 or a['target_mm']!=next_probe(matching[0]['metrics'],spec,a['var'],a['side']):
+            raise ValueError('Amplitude target must match the current measured gap')
+        if len(cells)!=1 or cells[0]['reps']!=1 or len(cells[0].get('actions',[]))!=1:
+            raise ValueError('Amplitude probe requires one move per declared block')
+        cell=cells[0]
+        expected_blocks=[{'mass_class':v} for v in spec['perturbation_variables'].get('mass_class',{}).get('levels',[])]
+        if expected_blocks and sorted(cell.get('blocks',[]),key=digest)!=sorted(expected_blocks,key=digest):
+            raise ValueError('Amplitude probe must test each mass once')
+        axes=spec['task']['action_space']['continuous_displacement_variables']
+        origin=spec['perturbation_variables'][a['var']].get('reference',0)
+        wanted=[(a['target_mm']-origin if v==a['var'] else 0) for v in axes]
+        if (cell['actions'][0]['u']!=wanted or any(v in cell.get('settings',{}) for v in axes)
+                or cell.get('amplitude_target')!={'var':a['var'],'side':a['side'],'mm':a['target_mm'],'interval':a['interval']}):
+            raise ValueError('Amplitude probe must move from current contact to the bound target')
+    elif any('amplitude_target' in cell for cell in cells):
+        raise ValueError('Only probe_amplitude may bind an absolute terminal target')
+    if a.get('action_design')=='directional':
+        i=spec['task']['action_space']['continuous_displacement_variables'].index(a['var'])
+        sign=1 if a['side']=='positive' else -1
+        if not cells or any(len(c.get('actions',[]))!=1 or np.count_nonzero(c['actions'][0]['u'])!=1
+                or c['actions'][0]['u'][i]*sign<=0 for c in cells):
+            raise ValueError('Transition movement differs from bound direction')
     if a.get('action_design')=='axis_both_signs':
         i=spec['task']['action_space']['continuous_displacement_variables'].index(a['var'])
         moves=[x['u'] for cell in cells for x in cell['actions']]

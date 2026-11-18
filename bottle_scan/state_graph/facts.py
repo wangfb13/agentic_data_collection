@@ -152,9 +152,12 @@ def generate_facts(graph,rows,labels,clusters,noise,spec,models=None):
                 present = {c['symbols'][active].split('(', 1)[0] for c in regions}
                 missing = {'Ready', 'NeedAction'} - present
                 if missing:
-                    facts.append(fact('development_class_missing', [active],
-                                      [i for c in regions for i in c['node_ids']],
-                                      {'observed_classes': sorted(present), 'missing_classes': sorted(missing)}))
+                    evidence = [i for c in regions for i in c['node_ids']]
+                    scopes = ([[active, name] for name in sorted(missing)]
+                              if spec.get('director', {}).get('score_based_axis_choice') else [[active]])
+                    for args in scopes:
+                        facts.append(fact('development_class_missing', args, evidence,
+                                          {'observed_classes': sorted(present), 'missing_classes': sorted(missing)}))
     if spec.get('graph_schema')=='state_graph_v5' or any(
             spec.get(section,{}).get(key) for section,key in (
             ('facts','measured_placement_coordinates'),('facts','boundary_before_stochastic'),

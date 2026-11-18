@@ -1,0 +1,7 @@
+{
+  "consumer": {"auto_l2": false},
+  "observation": {"tac_version": "legacy_pixel"},
+  "loop": {"run_through_budget": true},
+  "facts": {"amplitude_coverage": true, "min_bin_outcomes": 2, "terminal_based_direct_boundary": true},
+  "director": {"score_based_axis_choice": true}
+}

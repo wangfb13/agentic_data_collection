@@ -48,11 +48,25 @@ def records(episodes,spec,cid):
         yield ident,role,coords,success,cause,condition,e.get('model_id')
 
 
-def episode_frontiers(episodes,spec,cid,*,rows=(),model_id=None):
+def episode_frontiers(episodes,spec,cid,*,rows=(),endpoint_rows=None,model_id=None):
     if not spec.get('facts',{}).get('capability_predicates'):return []
     grouped=defaultdict(list);conditions={};unlocated_failures=defaultdict(set)
     episodes=list(episodes)
     group_for={e.get('attempt_id') or e.get('trial_id'):e.get('group_id') or e.get('attempt_id') or e.get('trial_id') for e in episodes}
+    terminal_based = spec['facts'].get('terminal_based_direct_boundary')
+    sources = {}
+    if terminal_based:
+        from .amplitude_coverage import terminal_samples
+        for sample in terminal_samples(rows if endpoint_rows is None else endpoint_rows, spec, cid):
+            ident = sample['node_id']
+            group_for[ident] = sample['group']
+            sources[ident] = sample['source']
+            key = json.dumps(sample['condition'], sort_keys=True)
+            conditions[key] = sample['condition']
+            for var, x in sample['coords'].items():
+                for side, sign in (('positive', 1), ('negative', -1)):
+                    if sign*x >= 0:
+                        grouped[key,var,side,'direct',None].append((ident,x,sample['success'],sample['cause']))
     cumulative=defaultdict(dict)
     for ident,role,coords,success,cause,condition,version in records(episodes,spec,cid):
         if success is False:
@@ -64,6 +78,8 @@ def episode_frontiers(episodes,spec,cid,*,rows=(),model_id=None):
         conditions[k]=condition
         if success is False:
             unlocated_failures[k].update(v for v in continuous(spec) if v not in coords)
+        if terminal_based and role=='direct':
+            continue
         for var,x in coords.items():
             for side,sign in (('positive',1),('negative',-1)):
                 if x*sign>=0:grouped[k,var,side,role,version if role=='policy' else None].append((ident,x,success,cause))
@@ -103,6 +119,10 @@ def episode_frontiers(episodes,spec,cid,*,rows=(),model_id=None):
                                  'ci_method':'episode bootstrap of observed successes; conditional on a bootstrap success',
                                  'trials':len(cell),'evaluated_trials':len(observed),'n_success':len(xs),'directional_evaluated_trials':tested[role],'model_id':version,
                                  'observed_points':[{'x':r[1],'success':r[2],'failure_cause':r[3],'trial_id':r[0]} for r in cell]}
+                        if terminal_based and role=='direct':
+                            from .amplitude_coverage import source_counts
+                            metrics.update(coordinate_stage='consumer_terminal',
+                                terminal_sources=source_counts({'source':sources[r[0]]} for r in observed))
                         if cfg.get('rate_based_frontier'):
                             from .frontier_rates import statistics
                             stats=statistics([(group_for[i],x,ok,cause) for i,x,ok,cause in observed],sign,stop,abs(envelope),cfg)

@@ -94,9 +94,32 @@ def fit(out, state, spec, name, rows):
 def augmented_facts(out, state, spec, model, rows, episode_list):
     from .v5_facts import episode_frontiers
     facts=c.read(model['facts_path']);graph=c.read(model['graph_path'])
+    endpoint_rows = None
+    cfg = spec.get('facts', {})
+    if cfg.get('amplitude_coverage') or cfg.get('terminal_based_direct_boundary') or spec.get('director',{}).get('score_based_axis_choice'):
+        # Fit eligibility is narrower than measured endpoint eligibility, e.g.
+        # a failed expert trial has a real consumer result but is not a demo.
+        from .amplitude_coverage import coverage_facts, terminal_samples, source_counts
+        from .common import independent
+        endpoint_rows=[r for r in c.all_rows(out,state) if not independent(r) and not r.get('post_freeze')
+                       and not r.get('source_dev_evaluation_open')]
+        evidence_spec=deepcopy(spec)
+        for v,d in evidence_spec['perturbation_variables'].items():
+            d['active']=state['rule']['variables'].get(v,{}).get('active',d.get('active',True))
+        if cfg.get('amplitude_coverage') or spec.get('director',{}).get('score_based_axis_choice'):
+            facts=[f for f in facts if f['pred'] not in ('amplitude_gap','best_covered_ready_region')]
+            new=coverage_facts(endpoint_rows, graph, evidence_spec, spec['active_post_condition'])
+            facts.extend(f for f in new if cfg.get('amplitude_coverage') or f['pred']!='amplitude_gap')
+        if cfg.get('terminal_based_direct_boundary'):
+            for pc in spec['post_conditions']:
+                samples=list(terminal_samples(endpoint_rows,evidence_spec,pc['id']))
+                totals=dict(all_evaluated=source_counts(samples),measured_by_axis={
+                    v:source_counts(s for s in samples if v in s['coords'])
+                    for v,d in evidence_spec['perturbation_variables'].items() if d['active'] and d['kind']=='continuous'})
+                facts.append(fact('terminal_outcome_sources',[pc['id']],[s['node_id'] for s in samples],totals))
     if spec.get('campaign',{}).get('integrated_frontier') or spec.get('facts',{}).get('capability_predicates'):
         for pc in spec['post_conditions']:
-            facts.extend(episode_frontiers(episode_list,spec,pc['id'],rows=rows,model_id=model['model_id']))
+            facts.extend(episode_frontiers(episode_list,spec,pc['id'],rows=rows,endpoint_rows=endpoint_rows,model_id=model['model_id']))
     enrich=spec['adapters'].get('exploration_context')
     if enrich:facts,_=load_callable(enrich)(rows,graph,facts,spec)
     return [*{f['id']:f for f in [state['seed_rule_fact'],*facts]}.values()]
@@ -107,6 +130,8 @@ def choose(out,state,spec,cfg,model,rows,facts,left,allow_agent,provider,phase):
     ctx=context(spec,state['rule'],facts,history=state['history'],hypotheses=state['hypotheses'],
                 state={'phase':phase,'frozen_independent':False,'trained':model['trained']},
                 observed_positions=observed_positions(rows,spec),graph_version=model['graph_version'],budget_left=left)
+    if not state['history']:
+        ctx['imported_last_axes']=cfg.get('imported_last_axes',[])
     ctx.update(execution=deepcopy(cfg.get('execution',{})),training={'active_model_trained':model['trained']},
                spent=state['spent'],prediction_results=state.get('prediction_results',[]))
     ctx['execution'].pop('sampling_preference',None)
@@ -318,6 +343,8 @@ def run_locked(out,state,spec,cfg,*,real,executor,provider,allow_agent,interacti
             c.atomic(out/'hypotheses.json',archive)
             previous=c.read(out/'rounds'/f'round_{index-1:04d}'/'round_report.json') if index>1 else None
             data=report(records,c.read(model['graph_path']),facts,decisions,spec,index,previous)
+            if spec.get('facts', {}).get('terminal_based_direct_boundary'):
+                data['terminal_sources']={f['args'][0]:f['metrics'] for f in facts if f['pred']=='terminal_outcome_sources'}
             acceptance=c.read(directory/'dev_validate.json')['acceptance']
             if spec['acceptance'].get('lower_bound_gates'):
                 data['development_point_pass_only']=acceptance['metrics'].get('development_point_pass_only',False)

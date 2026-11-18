@@ -112,6 +112,10 @@ def decide(ctx,output_dir,*,allow_agent=False,provider=None,provider_settings=No
     result={'status':'accepted' if answer else 'invalid_response','answer':answer,'attempts':attempts,'robot_executed':False,'graph_version':ctx['graph_version']}
     if cfg:
         result.update(director_mode=cfg.get('mode','llm'),effective_priors=deepcopy(ctx.get('effective_priors',{})))
+    if answer and not fixed and cfg.get('score_based_axis_choice'):
+        answer['selection_audit']=dict(mode='llm',reason=answer['reason'],candidates=[
+            {k:item.get(k) for k in ('operator','bindings','score','unavailable_reason')}
+            for item in ctx.get('operator_scores',[])])
     if answer and ctx.get('axis_prior_conflicts'):
         chosen=answer['args'].get('var') if answer['args'].get('action_design')=='axis_both_signs' else None
         answer['axis_prior_tradeoff']=[dict(conflict,decision='sample_underrepresented_axis' if chosen==conflict['var']

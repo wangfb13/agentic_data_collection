@@ -57,8 +57,10 @@ def applicable_operators(facts,spec,rule,state=None):
             m=f['metrics'];point={k:v for k,v in m.get('region',{}).items() if v is not None}
             for op in ('collect_outcomes','collect_transitions'):
                 add(op,[f],post_condition=active,target_point=point,condition=m.get('condition',{}))
-    gaps = [f for f in find('development_class_missing') if f['args'] == [active]]
+    gaps = [f for f in find('development_class_missing') if f['args'][:1] == [active]]
     for f in gaps:
+        if len(f['args']) > 1:
+            continue  # The v5 planner binds these to measured regions.
         add('collect_outcomes', [f], post_condition=active)
         add('collect_transitions', [f], post_condition=active)
     # Mixed or unknown regions can still yield both classes in a prospective B.

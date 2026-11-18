@@ -120,6 +120,11 @@ def proposal(ctx,offer):
         for x in xs:add({var:x})
     elif op=='probe_hidden_variable':
         for x in v['levels']:add({var:x})
+    elif op=='probe_amplitude':
+        i=action_vars.index(var)
+        offset=a['target_mm']-decl[var].get('reference',0)
+        cell=add(acts=[action(i,offset)])
+        cell.update(reps=1,amplitude_target=dict(var=var,side=a['side'],mm=a['target_mm'],interval=a['interval']))
     elif op in ('collect_transitions','verify_edges'):
         origin={**a.get('target_point',{}),**{k:float(np.mean(x)) for k,x in a.get('intervals',{}).items()}}
         if op=='verify_edges':
@@ -129,10 +134,14 @@ def proposal(ctx,offer):
             both=a.get('action_design')=='axis_both_signs'
             counter=a.get('action_design')=='crossed_sign_amplitude'
             for i,k in enumerate(action_vars):
-                if both and k!=var:continue
+                directional=a.get('action_design')=='directional'
+                if (both or directional) and k!=var:continue
                 lo,hi=decl[k]['envelope'];lim=spec['safety_envelope']['max_action'][i]
                 pos=origin.get(k,decl[k].get('reference',0))
-                for sign in ((1,-1) if counter or both else ((1,) if hi>pos else (-1,))):
+                signs=(1,-1) if counter or both else ((1,) if hi>pos else (-1,))
+                if directional:
+                    signs=(1,) if a['side']=='positive' else (-1,)
+                for sign in signs:
                     room=min(lim,hi-pos if sign==1 else pos-lo)
                     if room<=0:continue
                     n=spec['dynamics']['min_amplitude_levels'] if counter else 1
@@ -167,10 +176,24 @@ def scoring(ctx,offer,answer):
     a=answer['args'];gap=0;var=a.get('var');cells=(answer['plan'] or {}).get('cells',[])
     region=a.get('intervals',{}).copy()
     if var and a.get('interval'):region[var]=a['interval']
+    if ctx['spec'].get('director',{}).get('score_based_axis_choice') and a.get('target_point'):
+        for k,x in a['target_point'].items():
+            tol=next((f['metrics']['resolution_mm'] for f in facts if f['pred']=='coordinate_resolution' and f['args']==[k]),
+                     spec['facts']['boundary_resolution_mm'])
+            region[k]=(x-tol,x+tol)
     if var and 'start_mm' in a:
         tol=next((f['metrics']['resolution_mm'] for f in facts if f['pred']=='coordinate_resolution' and f['args']==[var]),
                    spec['facts']['boundary_resolution_mm'])
         region[var]=(a['start_mm']-tol,a['start_mm']+tol)
+    if a.get('action_design')=='directional' and cells:
+        # D5's variance term must refer to this particular signed move. The
+        # two opposite candidates otherwise inherit the same cluster score.
+        axis_index=spec['task']['action_space']['continuous_displacement_variables'].index(var)
+        cell=cells[0]
+        endpoint=cell['settings'].get(var,spec['perturbation_variables'][var].get('reference',0))+cell['actions'][0]['u'][axis_index]
+        tol=next((f['metrics']['resolution_mm'] for f in facts if f['pred']=='coordinate_resolution' and f['args']==[var]),
+                 spec['facts']['boundary_resolution_mm'])
+        region[var]=(endpoint-tol,endpoint+tol)
     exact={i for f in targeted for i in f['evidence']}
     known=variance_stats.get('locations',{})
     ids={i for i in exact if i in variances and i not in known}
@@ -201,7 +224,7 @@ def scoring(ctx,offer,answer):
         elif 'interval' in a:
             x,y=a['interval'];gap+=max(0.,min(hi,y)-max(lo,x))
     n=sum(c['reps']*len(c.get('blocks',[{}])) for c in (answer['plan'] or {}).get('cells',[]))
-    total=sum(variances[i] for i in ids)
+    total=sum(variances[i] for i in sorted(ids))
     return {'target_node_ids':sorted(ids),'variance_sum':total,'frontier_gap_mm':gap,'planned_trials':n,
             'score':(total+spec['director']['frontier_weight']*gap)/n if n else None}
 
@@ -244,6 +267,9 @@ def finalize_context(ctx):
 
 
 def fixed_decision(ctx):
+    if ctx.get('spec',{}).get('director',{}).get('score_based_axis_choice'):
+        from .axis_planning import select
+        return select(ctx)
     options=[v for v in ctx['operator_scores'] if v.get('proposal')]
     if not options:raise ValueError('No feasible validated operation within remaining budget')
     if any(v['operator']=='complete' for v in options):

@@ -19,7 +19,7 @@ from .operators import validate_decision
 from .acceptance import evaluate_B
 
 COLLECT={'collect_seed','collect_outcomes','collect_transitions','expand_range','densify','activate_variable',
-         'probe_hidden_variable','block_by_property','repeat_state','verify_edges','validate_B','recalibrate_reference','probe_recovery_frontier','request_expert_recovery'}
+         'probe_hidden_variable','block_by_property','repeat_state','verify_edges','validate_B','probe_amplitude','recalibrate_reference','probe_recovery_frontier','request_expert_recovery'}
 
 
 def atomic(path,value):
@@ -97,7 +97,8 @@ def expand_plan(plan,spec):
                 settings={k:v['reference'] for k,v in spec['perturbation_variables'].items() if 'reference' in v}
                 settings.update(cell.get('settings',{}))
                 trials.append({'settings':settings,'block':block,'actions':[normalize_action(a,spec) for a in cell.get('actions',[])],
-                               'source_node_id':cell.get('source_node_id'),'repeat':repeat})
+                               'source_node_id':cell.get('source_node_id'),'repeat':repeat,
+                               **({'amplitude_target':deepcopy(cell['amplitude_target'])} if 'amplitude_target' in cell else {})})
     return trials
 
 
@@ -136,7 +137,14 @@ def queue_plan(out,state,spec,plan,role,*,source_review=None):
     if state['spent']['trials']+len(items)+reserve>spec['budget']['max_new_trials']:raise ValueError('Trial budget exhausted')
     model=state['frozen'] if role=='independent' else state.get('model')
     if role in ('development','independent','policy_frontier') and (not model or not model.get('trained')):raise ValueError('B needs a trained candidate')
-    batch_id='batch_'+str(len(state['history']))+'_'+digest([plan,role,state['revision']]+([state.get('round_index'),state.get('round_stage'),len(state['trials'])] if v5 else []))[:8]
+    signature=[plan,role,state['revision']]
+    if v5:
+        signature.extend([state.get('round_index'),state.get('round_stage'),len(state['trials'])])
+        if spec.get('facts',{}).get('amplitude_coverage') or spec.get('director',{}).get('score_based_axis_choice'):
+            # A continuation can pick the same round-one plan as its source.
+            # Keep their trial/node IDs distinct, including after a restart.
+            signature.append(state['created_ns'])
+    batch_id='batch_'+str(len(state['history']))+'_'+digest(signature)[:8]
     queued=[]
     for i,item in enumerate(items):
         trial_id=batch_id+'_'+str(i+1).zfill(4);directory=str((Path(out)/'trials'/trial_id).resolve())

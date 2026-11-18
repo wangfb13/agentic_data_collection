@@ -237,6 +237,11 @@ def revise(base,graph,rows,labels,clusters,noise,spec,models):
             facts.append(_fact('ready_threshold_unattainable',[cid],rows,calibration))
     for f in facts:
         if strict and f['pred']=='coverage' and f['args'][0] in continuous(spec):f['metrics']['coordinate_source']='measured' if cfg.get('measured_placement_coordinates') else 'legacy'
+    active = spec['active_post_condition']
+    if cfg.get('amplitude_coverage') or spec.get('director', {}).get('score_based_axis_choice'):
+        from .amplitude_coverage import coverage_facts
+        spatial = coverage_facts(rows, graph, spec, active)
+        facts.extend(f for f in spatial if cfg.get('amplitude_coverage') or f['pred'] != 'amplitude_gap')
     for condition in spec['post_conditions']:
         cid=condition['id']
         if spec.get('consumer',{}).get('auto_l2'):

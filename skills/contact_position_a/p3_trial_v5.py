@@ -79,6 +79,24 @@ def model_row(raw,trial,directory,spec):
     return observe_rows([raw],trial,directory,spec)[0]
 
 
+def measured_amplitude_action(request, raw, spec):
+    from bottle_scan.state_graph.v5_facts import coordinate
+    target=request['amplitude_target']
+    axes=coord_names(spec)
+    measured=[coordinate(raw,v)[0] for v in axes]
+    if any(x is None for x in measured):
+        raise ValueError('amplitude_start_coordinate_missing')
+    k=axes.index(target['var'])
+    delta=target['mm']-measured[k]
+    if delta*(1 if target['side']=='positive' else -1)<=0:
+        raise ValueError('amplitude_target_not_in_requested_direction')
+    u=[0.]*len(axes)
+    u[k]=delta
+    action={'kind':action_kind(spec),'u':u}
+    validate_cell({'settings':dict(zip(axes,measured)),'actions':[action]},spec,'',{})
+    return action
+
+
 def run_trial(request,directory,spec,cfg,io,*,sources=None):
     directory=Path(directory)
     start=time.monotonic()
@@ -88,6 +106,9 @@ def run_trial(request,directory,spec,cfg,io,*,sources=None):
     declared={'direct_baseline':'direct','expert_recovery':'expert','policy_frontier':'policy',
               'development':'policy','independent':'policy','exploration':'planned' if request['actions'] else 'direct'}
     ctl=declared[role]
+    if request.get('operation')=='probe_amplitude' or 'amplitude_target' in request:
+        if request.get('operation')!='probe_amplitude' or not request.get('amplitude_target') or ctl!='planned' or len(request['actions'])!=1:
+            raise ValueError('Amplitude probes require a bound terminal target and one planned action')
     if (ctl=='policy')!=(request['mode']=='learned') or (ctl!='planned' and request['actions']):
         raise ValueError('Unexpected action source for declared role')
     validate_cell({'actions':request['actions'],'settings':request['settings'],'blocks':[request['block']]},spec,'',{})
@@ -169,10 +190,27 @@ def run_trial(request,directory,spec,cfg,io,*,sources=None):
                     break
             elif index<len(request['actions']):
                 action=request['actions'][index]
+                if 'amplitude_target' in request:
+                    if request.get('operation')!='probe_amplitude' or index:
+                        raise ValueError('Unexpected terminal amplitude binding')
+                    try:
+                        action=measured_amplitude_action(request,raw,spec)
+                    except ValueError as exc:
+                        reason=str(exc)
+                        break
             if action and index==maximum:
                 reason='steps_exhausted'
                 break
             if not action:
+                if 'amplitude_target' in request:
+                    from bottle_scan.state_graph.v5_facts import coordinate
+                    goal = request['amplitude_target']
+                    final = coordinate(raw, goal['var'])[0]
+                    lo, hi = goal['interval']
+                    landed = final is not None and (lo < final <= hi if goal['side']=='positive' else lo <= final < hi)
+                    if not landed:
+                        reason='amplitude_final_coordinate_missing' if final is None else 'amplitude_final_outside_gap'
+                        break
                 raw['is_terminal']=True
                 raw['provenance']['direct_A']=ctl=='direct'
                 if transitions_only:break

@@ -58,6 +58,16 @@ def initialize(parent, out, *, extra_trials=None, consumer=None, version=4, over
             else:
                 rows = [r for r in campaign.all_rows(parent,state) if not independent(r)]
                 origins = [{k:t[k] for k in ('trial_id','directory','outcome_status')} for t in state['trials'] if t['status']=='complete']
+        if v5_parent and (overrides or {}).get('director',{}).get('score_based_axis_choice'):
+            # Carry only the last finished exploration choice, not a pending
+            # request, independent-B data, or the source controller's cursor.
+            for entry in reversed(state.get('history',[])):
+                batch=[t for t in state['trials'] if t['request'].get('round_index')==entry.get('round_index')
+                       and t['request'].get('role') not in ('independent','development')]
+                if batch and all(t['status']=='complete' for t in batch):
+                    from bottle_scan.state_graph.axis_planning import axis_targets
+                    cfg['imported_last_axes']=sorted({v for v,_ in axis_targets(entry['decision'],spec)})
+                    break
         path = campaign.read('config.state_graph.campaign_v4.json')['execution']['environment']['RIGHT_FORCE_POLICY_PATH']
         physics = consumer or (cfg['consumer'] if v5_parent else p3_force.identity(path))
         if v5_parent and physics!=cfg['consumer']:raise ValueError('Source results require the same verified consumer identity')
