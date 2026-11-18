@@ -128,7 +128,10 @@ def build_graph(rows,noise,spec,dynamics=None):
     if spec.get('graph_schema')=='state_graph_v5':result['schema']='state_graph_v5'
     if 'include_inferred' in spec.get('labels',{}):result['label_inferred']=include_inferred
     if calibrations:result['ready_calibration']=calibrations
-    if scale is not None:result.update(resolution=scale,radii=radius)
+    if scale is not None:
+        result.update(resolution=scale,radii=radius)
+        if spec.get('geometry',{}).get('reference_check_ready_modalities'):
+            result['radius_modalities']=list(noise['active_modalities'])
     if spec.get('graph',{}).get('success_value'):
         from .v5_values import solve
         result.update(S={},best_path={},first_action={},model_reachability={},

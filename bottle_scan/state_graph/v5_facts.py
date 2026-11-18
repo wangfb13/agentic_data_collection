@@ -67,6 +67,11 @@ def resolution(rows,spec,var):
         if r.get('window_index')!=0 or independent(r):continue
         x,_=coordinate(r,var)
         key=r.get('repeat_key')
+        if spec.get('noise',{}).get('relative_repeat_key'):
+            # Estimate C5 on exact commands within a placement, independently
+            # of the rounded bins whose width C5 is about to determine.
+            key=digest([r['task_id'],r.get('repeat_settings'),r.get('attrs',{}).get('mass_class'),
+                        r.get('extractor_versions'),r.get('provenance',{}).get('sensor_version')])
         if x is None or not key or var not in (r.get('repeat_settings') or {}):continue
         # Do not pool across placement witnesses or sensor epochs.
         key=(key,r.get('provenance',{}).get('placement_reference_id'),r.get('session'))

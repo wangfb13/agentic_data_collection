@@ -114,7 +114,7 @@ def run_trial(request,directory,spec,cfg,io,*,sources=None):
     validate_cell({'actions':request['actions'],'settings':request['settings'],'blocks':[request['block']]},spec,'',{})
     transitions_only=cfg.get('execution',{}).get('scope')=='transitions_only'
     if transitions_only and role!='exploration':raise ValueError('Transition acquisition cannot evaluate consumer or recovery roles')
-    order=[] if transitions_only else consumer_plan(target,spec,request)
+    order=[] if transitions_only or request.get('operation')=='collect_repeat_block' else consumer_plan(target,spec,request)
     bundle=skill=None
     fitted_spec=spec
     if request.get('model_bundle'):
@@ -123,6 +123,11 @@ def run_trial(request,directory,spec,cfg,io,*,sources=None):
         if role=='independent' and request.get('frozen_model_id')!=request['model_id']:
             raise ValueError('Independent B requires the frozen version')
         bundle={**bundle,'spec':{**fitted_spec,'active_post_condition':target}}
+    if bundle and spec.get('noise',{}).get('relative_repeat_key'):
+        widths=bundle['noise'].get('repeat_resolution_mm')
+        if widths:
+            spec={**spec,'repeat_resolution_mm':widths}
+            fitted_spec={**fitted_spec,'repeat_resolution_mm':widths}
     if ctl=='policy':
         if bundle is None:raise ValueError('No frozen recovery skill')
         skill=SymbolicRecoverySkill(bundle)
@@ -140,6 +145,9 @@ def run_trial(request,directory,spec,cfg,io,*,sources=None):
     io.confirm(request)
     if spec.get('geometry',{}).get('automatic_reference_check') and hasattr(io,'prepare'):
         io.reference_bundle=bundle
+    if request.get('operation')=='collect_repeat_block':
+        from .repeat_block import collect
+        return collect(io,request,directory,spec,start)
     if hasattr(io,'prepare'):io.prepare(request)
     maximum=spec['runtime']['max_steps']
     declared_exit=False

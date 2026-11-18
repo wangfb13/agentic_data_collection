@@ -125,6 +125,12 @@ def initialize(parent, out, *, extra_trials=None, consumer=None, version=4, over
                     validation['planned_denominators']=dict(denominator)
                 cfg.update(development_plan=validation,independent_plan=validation)
             if not v5_parent:rows=[ah_geometry.convert_legacy_row(row,spec) for row in rows]
+            if spec.get('noise',{}).get('relative_repeat_key'):
+                from bottle_scan.state_graph.repeat_evidence import relative_key,scales
+                widths=scales(rows,spec)
+                for row in rows:
+                    row['repeat_key']=relative_key(row,spec,widths)
+                    row.setdefault('attrs',{})['repeat_placement_id']=row.get('provenance',{}).get('placement_reference_id')
             # A seed has no new consumer outcome until it has actually been evaluated.
             for row in rows:
                 row['task_id']=task_id(spec)

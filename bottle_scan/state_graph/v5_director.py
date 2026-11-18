@@ -104,6 +104,8 @@ def proposal(ctx,offer):
                 cell=add(points[0]);cell['reps']=1
     elif op in ('probe_recovery_frontier','request_expert_recovery'):
         add({var:a['start_mm'] if 'start_mm' in a else float(np.mean(interval))})
+    elif op=='collect_repeat_block':
+        add({v:0. for v in action_vars})['reps']=a['probes']
     elif op=='recalibrate_reference':
         add({v:decl[v].get('reference',0.) for v in action_vars})['reps']=max(2,cfg['plan_reps'])
     elif op=='expand_range':
@@ -170,6 +172,9 @@ def proposal(ctx,offer):
 
 def scoring(ctx,offer,answer):
     spec=ctx['spec'];cid=spec['active_post_condition'];facts=ctx['facts']
+    if spec.get('director',{}).get('pointwise_scoring'):
+        from .pointwise_score import score
+        return score(ctx,answer)
     variance_stats=next((f['metrics'] for f in facts if f['pred']=='posterior_variance' and f['args']==[cid]),{})
     variances=variance_stats.get('by_node',{})
     targeted=[f for f in facts if f['id'] in offer['premises_satisfied_by'] and not f['pred'].startswith('phase_')]
@@ -250,8 +255,11 @@ def finalize_context(ctx):
     if cfg.get('checkable_predictions'):
         ctx['prediction_contract']={'required':'non-empty predictions with pred, exact args, expect=appears|disappears|metric; metric additionally requires metric,comparison,value; optional scope by condition/model_id',
                                     'comparisons':list(COMPARE),'predicate_schema':sorted(PREDICATES|{f['pred'] for f in ctx['facts']}),'numeric_metric_schema':METRICS}
-    if cfg.get('operator_scoring') or cfg.get('mode')=='fixed_priority':
+    if cfg.get('operator_scoring') or cfg.get('pointwise_scoring') or spec.get('operators',{}).get('repeat_block') or spec.get('loop',{}).get('progress_check') or cfg.get('mode')=='fixed_priority':
         from .operators import validate_decision
+        restricted=cfg.get('pointwise_scoring') or spec.get('loop',{}).get('progress_check') or spec.get('operators',{}).get('repeat_block')
+        if restricted:
+            ctx['applicable_operators']=ctx.setdefault('unfiltered_operator_offers',list(ctx['applicable_operators']))
         items=[]
         for offer in ctx['applicable_operators']:
             item=dict(operator=offer['op'],bindings=offer['bindings'],premises=offer['premises_satisfied_by'])
@@ -262,6 +270,17 @@ def finalize_context(ctx):
                     item['axis_evidence_priority']=int(offer['bindings'].get('action_design')=='axis_both_signs')
             except (KeyError,ValueError,TypeError) as exc:item.update(score=None,proposal=None,unavailable_reason=str(exc))
             items.append(item)
+        if restricted:
+            from .pointwise_score import PREREQUISITES
+            priority={i['operator'] for i in items if i.get('proposal') and i['operator'] in PREREQUISITES}
+            keep=[]
+            for offer,item in zip(ctx['applicable_operators'],items):
+                if item.get('proposal') and (not priority or offer['op'] in priority):
+                    keep.append(offer)
+                elif priority and item.get('proposal'):
+                    item.update(proposal=None,unavailable_reason='pending_prerequisite')
+            ctx['applicable_operators']=keep
+            ctx['priority_prerequisites']=sorted(priority)
         ctx['operator_scores']=items
     return ctx
 

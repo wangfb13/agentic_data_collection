@@ -57,7 +57,7 @@ def grouped_diagnostics(rows,spec,out):
         H=pairwise_distances(held,nm)
         for i,a in enumerate(held):
             for j,b in enumerate(held[:i]):
-                if a.get('window_index',0)==b.get('window_index',0)==0 and a.get('repeat_key')==b.get('repeat_key') and group_id(a)!=group_id(b):
+                if a.get('window_index',0)==b.get('window_index',0)==0 and a.get('repeat_key') is not None and a.get('repeat_key')==b.get('repeat_key') and group_id(a)!=group_id(b):
                     held_repeats.append({'fold':fold,'nodes':[a['node_id'],b['node_id']],'distance':float(H[i,j]),'within_noise':bool(H[i,j]<=1)})
         for p in spec['post_conditions']:calibration[p['id']]+=heldout_probability(held,train,nm,spec,p['id'])
         if not nm['active_modalities'] or not all(nm['modalities'][n]['status']=='ready' for n in nm['active_modalities']):continue
@@ -120,7 +120,7 @@ def run_validation(rows,spec,noise,graph,labels,clusters,facts,out):
     out=Path(out);out.mkdir(parents=True,exist_ok=True)
     D=pairwise_distances(rows,noise);zero=defaultdict(list)
     for i,r in enumerate(rows):
-        if r.get('is_reference') and r.get('window_index',0)==0:zero[r['repeat_key']].append(i)
+        if r.get('is_reference') and r.get('repeat_key') is not None and r.get('window_index',0)==0:zero[r['repeat_key']].append(i)
     pairs=[(a,b) for group in zero.values() for j,a in enumerate(group) for b in group[:j] if group_id(rows[a])!=group_id(rows[b])]
     V1={'status':'computed' if pairs else 'unavailable','pairs':len(pairs),'fraction_within_noise':mean([D[a,b]<=1 for a,b in pairs]),'incomparable':sum(not np.isfinite(D[a,b]) for a,b in pairs),
         'scope':'training_fit_check_only','notes':'Use heldout_repeatability for evaluation; this fitted repeat check is not independent validation.'}

@@ -5,7 +5,7 @@ from .common import digest
 from .v5_facts import continuous,number
 
 FRONTIER={'probe_recovery_frontier','request_expert_recovery'}
-NEW_COLLECTION=FRONTIER|{'recalibrate_reference','probe_amplitude'}
+NEW_COLLECTION=FRONTIER|{'recalibrate_reference','probe_amplitude','collect_repeat_block'}
 
 
 def revise(out,facts,spec,rule,state):
@@ -17,6 +17,11 @@ def revise(out,facts,spec,rule,state):
     def add(op,fs,**args):
         out.append({'op':op,'bindings':args,'premises_satisfied_by':[f['id'] for f in fs]})
     def remove(op):out[:]=[x for x in out if x['op']!=op]
+    if oc.get('repeat_block'):
+        remove('collect_seed')
+        for f in get('repeat_calibration_missing'):
+            add('collect_repeat_block',[f], probes=f['metrics']['deficit']+spec['noise']['repeat_block_margin'],
+                modalities=sorted(f['metrics']['missing']), condition={'mass_class':spec['noise']['repeat_mass_class']})
     if cfg.get('axis_balance'):
         for f in get('axis_undersampled'):
             var=f['args'][0]
@@ -98,7 +103,7 @@ def revise(out,facts,spec,rule,state):
         for op in out:
             if ph['id'] not in op['premises_satisfied_by']:op['premises_satisfied_by'].append(ph['id'])
     if any(o['op']!='pause' for o in out) and any(f['pred']=='phase_plan' for f in phases):
-        remove('pause')
+        if not spec.get('loop',{}).get('progress_check'):remove('pause')
     return out
 
 
@@ -166,6 +171,10 @@ def validate(answer,ctx):
         distances=np.diff([interval[0],*sorted(set(x)),interval[1]])
         res=next((f['metrics']['resolution_mm'] for f in ctx['facts'] if f['pred']=='coordinate_resolution' and f['args']==[a['var']]),spec['facts']['boundary_resolution_mm'])
         if min(distances)<res:raise ValueError('Densify spacing below coordinate resolution')
+    if op=='collect_repeat_block':
+        axes=spec['task']['action_space']['continuous_displacement_variables']
+        if len(cells)!=1 or cells[0]['reps']!=a['probes'] or cells[0]['blocks']!=[a['condition']] or cells[0].get('actions') or any(cells[0]['settings'].get(k)!=0 for k in axes):
+            raise ValueError('Repeat block requires K probes at the same relative origin and mass, without downstream actions')
     if op in FRONTIER or op=='recalibrate_reference':
         condition=a.get('condition',{})
         for cell in cells:

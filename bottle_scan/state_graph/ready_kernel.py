@@ -7,6 +7,10 @@ from scipy.stats import beta
 from .common import group_id
 
 
+def gaussian_weight(distance, bandwidth):
+    return np.exp(-0.5*np.square(distance/bandwidth))
+
+
 def select_cost(scores, positives, settings):
     fp,miss=settings['false_release_cost'],settings['miss_cost']
     if any(not np.isfinite(x) or x<=0 for x in (fp,miss)):raise ValueError('Ready costs must be finite and positive')
@@ -45,7 +49,7 @@ def estimate(train, distances, condition, settings):
         raise ValueError('Ready error cap and threshold candidates must be probabilities')
     best = None
     for h in bandwidths:
-        weights = np.exp(-0.5 * np.square(d / h))
+        weights = gaussian_weight(d,h)
         cv = weights[:len(train)].copy()
         for j, ids in enumerate(members):
             cv[ids, j] = 0

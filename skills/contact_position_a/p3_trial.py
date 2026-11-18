@@ -79,7 +79,7 @@ class RealIO:
         self.directory=directory
         self.spec=spec
         self.cfg,self.identity=campaign_ah.check_assets()
-        self.consumer=cfg.get('consumer')
+        self.consumer=None if req.get('operation')=='collect_repeat_block' else cfg.get('consumer')
         self.assets=p3_force.load(self.consumer) if self.consumer else None
         self.mass=req['block']['mass_class']
         self.group='P3_FP_'+req['trial_id']
@@ -91,11 +91,14 @@ class RealIO:
         self.reference_windows=[]
         self.air_file=self.directory/'airborne.json'
         self.contact_failure=None
+        self.repeat_contacts={'measurement':0,'setup':0}
         self.placement=spec.get('current_placement') or 'P3'
 
     def confirm(self,request):
         print(f"{request['trial_id']} {request['role']}，请放{'轻' if self.mass=='light' else '重'}白瓶。"
               f" {request['mode']}，计划动作 {request['actions']}。",flush=True)
+        if request.get('operation')=='collect_repeat_block':
+            print('同一放置重复轻触；每次松爪，在同一 TCP 采下一次。请保持瓶子和夹爪位置。',flush=True)
         scope='确认修正路径畅通。' if self.consumer is None else '确认修正、提起及返回路径畅通。'
         if input('瓶已放稳，右爪全开空载并对准瓶身、遥操已停。'+scope+'输入 MOVE：').strip()!='MOVE':
             raise campaign.RetryTrial('未授权本次动作')
@@ -160,6 +163,8 @@ class RealIO:
             self.contact_failure=None
             before=hw.pose()
             active=True
+            if self.request.get('operation')=='collect_repeat_block':
+                self.repeat_contacts['measurement' if index>=0 else 'setup']+=1
             status,p=runner.touch()
             raw,row=finish_capture(path,before,status,p)
             if raw is not None:
@@ -170,7 +175,8 @@ class RealIO:
                 if confirmation['unmoved'] is not True:
                     from .p3_placement import unlabelled_contact
                     self.invalidate_reference()
-                    if index>=0:
+                    refresh=index>=0 and self.request.get('operation')!='collect_repeat_block'
+                    if refresh:
                         # The pre-confirmation window may predate the movement.
                         # Acquire a new stable window at the same PROBE protocol;
                         # no arm motion and no reused position label.
@@ -186,7 +192,7 @@ class RealIO:
                         raw,new_row=finish_capture(refreshed/'observation.json',before,status,p)
                         new_row.update(placement_confirmation=confirmation,original_observation=str(path))
                         campaign.atomic(refreshed/'observation.json',new_row)
-                    raw=unlabelled_contact(raw,confirmation,original_observation=path,refreshed=index>=0)
+                    raw=unlabelled_contact(raw,confirmation,original_observation=path,refreshed=refresh)
             yield raw
         finally:
             try:
@@ -303,6 +309,12 @@ class RealIO:
             from .p3_prepare import prepare_position
             prepare_position(self.directory,np.array(self.reference['pose']),u,self.cfg,self.spec,campaign_ah.child,
                              station_z_bounds=self.z_limits)
+
+    def repeat_pose(self):
+        return campaign_ah.current_pose(self.directory,'repeat_tcp',self.cfg,campaign_ah.child)
+
+    def repeat_continuity(self):
+        return input('重复块进行中：同一只瓶始终未被移动，仍在同一放置？y / n：').strip().lower() in ('y','yes')
 
     def expert_action(self,raw):
         """Human expert specifies one signed movement through the same owned executor."""

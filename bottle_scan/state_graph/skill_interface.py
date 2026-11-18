@@ -103,6 +103,10 @@ def model_observation(row,names):
 
 
 def repeat_key(row,spec):
+    if spec.get('noise',{}).get('relative_repeat_key'):
+        from .repeat_evidence import relative_key
+        widths=spec.get('repeat_resolution_mm') or {k:spec['facts']['boundary_resolution_mm'] for k in spec['task']['action_space']['continuous_displacement_variables']}
+        return relative_key(row,spec,widths)
     settings=row.get('repeat_settings',{})
     variables=spec.get('perturbation_variables',{})
     active={name:settings.get(name) for name,v in variables.items() if v.get('active',True) and v['kind']!='object_property'}

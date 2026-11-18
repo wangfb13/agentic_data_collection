@@ -27,6 +27,10 @@ def build(rows,spec,out,validate=True,assessments=(),previous_clusters=None):
         raise ValueError('Use different output directories for different graph versions')
     if expected_schema=='state_graph_v5':
         rows=[r for r in rows if not independent(r)]
+    if spec.get('noise',{}).get('relative_repeat_key'):
+        from .repeat_evidence import relative_key,scales
+        widths=scales(rows,spec)
+        rows=[{**r,'repeat_key':relative_key(r,spec,widths)} for r in rows]
     noise=fit_noise(rows,spec);f=fit_dynamics(rows,noise,spec)
     graph=build_graph(rows,noise,spec,f);labels=generate_labels(graph,rows,spec);clusters=cluster_nodes(rows,graph,noise,labels,spec)
     from .clusters import reconcile_regions
@@ -59,6 +63,13 @@ def initial_rule(rows,spec):
     return {'rule_id':(rows[-1].get('rule_id') or rows[-1]['session']) if rows else 'rule_seed','variables':variables,'post_condition':spec['active_post_condition']}
 
 
+def director_evidence(rows,state,spec):
+    if spec.get('director',{}).get('pointwise_scoring') or spec.get('loop',{}).get('progress_check'):
+        from .pointwise_score import evidence
+        return {'point_evidence':evidence(rows,state['graph'],spec)}
+    return {}
+
+
 def history_replay(rows,spec,out,allow_agent=False,settings=None):
     groups=defaultdict(list)
     for r in rows:groups[group_id(r)].append(r)
@@ -71,7 +82,8 @@ def history_replay(rows,spec,out,allow_agent=False,settings=None):
         positions=observed_positions(prefix,spec)
         from .director_bridge import update_hypotheses
         hypotheses=update_hypotheses(hypotheses,state['facts'],state['graph']['graph_version'])
-        ctx=context(spec,rule,state['facts'],hypotheses=hypotheses,history=events,graph_version=state['graph']['graph_version'],observed_positions=positions,budget_left=0 if not allow_agent else spec['budget']['max_new_trials'])
+        ctx=context(spec,rule,state['facts'],hypotheses=hypotheses,history=events,graph_version=state['graph']['graph_version'],observed_positions=positions,budget_left=0 if not allow_agent else spec['budget']['max_new_trials'],
+                    extras=director_evidence(prefix,state,spec))
         result=decide(ctx,Path(out)/str(end)/'director',allow_agent=allow_agent,provider_settings=settings)
         hypotheses=result.get('hypotheses',hypotheses)
         events.append({'prefix_trials':end,'prefix_nodes':len(prefix),'status':result['status'],'graph_version':state['graph']['graph_version'],
@@ -99,7 +111,7 @@ def pipeline(spec,sources,out,allow_agent=False,settings=None,replay=True,assess
         # Current decisions consume actual B acceptance, separately from the
         # retrospective prefix replay (which must not see future B outcomes).
         rule=initial_rule(members,task_spec)
-        ctx=context(task_spec,rule,state['facts'],state=director_state,graph_version=state['graph']['graph_version'])
+        ctx=context(task_spec,rule,state['facts'],state=director_state,graph_version=state['graph']['graph_version'],extras=director_evidence(members,state,task_spec))
         write(dest/'director_current_context.json',ctx)
     write(out/'task_index.json',{t: {'directory':str(out/'tasks'/digest(t)[:12]),'graph_version':s['graph']['graph_version'],'training':s['training']} for t,s in states.items()})
     return reports,states,rows

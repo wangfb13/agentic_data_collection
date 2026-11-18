@@ -63,6 +63,8 @@ def initialize_rounds(state, spec, cfg):
                                        'positive':None if a['range'][1]<0 else [max(0,a['range'][0]),a['range'][1]]} for k,a in axes.items()})
     declared=fact('initial_rule_declared',[rule['rule_id']],[digest({'spec':spec,'rule':rule})])
     rule['field_provenance']={k:{'operator':'initialize','fact_ids':[declared['id']]} for k in tuple(rule)}
+    if spec.get('operators',{}).get('repeat_block'):
+        state['spent']['repeat_probes']=0
     state.update(schema='symbolic_campaign_v5',round_index=1,round_stage='plan',
                  dispatch_attempts=0,independent_reserve=reserve,independent_plan=independent,
                  independent_plan_digest=digest(independent),seed_rule_fact=declared,phase='plan')
@@ -127,9 +129,22 @@ def augmented_facts(out, state, spec, model, rows, episode_list):
 
 def choose(out,state,spec,cfg,model,rows,facts,left,allow_agent,provider,phase):
     from .director_bridge import finalize_context
+    extras={'spent':state['spent'],'execution':deepcopy(cfg.get('execution',{}))}
+    if spec['director'].get('pointwise_scoring') or spec['loop'].get('progress_check'):
+        from .pointwise_score import evidence
+        from .common import independent
+        all_visible=[r for r in c.all_rows(out,state) if not independent(r) and not r.get('source_dev_evaluation_open')]
+        extras['point_evidence']=evidence(all_visible,c.read(model['graph_path']),spec)
+    if spec['loop'].get('progress_check'):
+        from .collection_progress import restrictions,no_progress_fact
+        next_index=state['round_index']+int(state['round_stage']=='update_rule')
+        ledger=[entry for rec in state.get('collection_progress',[]) for entry in [rec,*rec.get('batch_no_progress',[])]]
+        live,repeated=restrictions(ledger,next_index,spec['loop']['no_progress_cooldown'],all_visible,c.read(model['graph_path']),spec,facts)
+        facts=[f for f in facts if f['pred']!='operator_no_progress']+[no_progress_fact(r) for r in live]
+        extras.update(active_cooldowns=live,repeated_no_progress=repeated)
     ctx=context(spec,state['rule'],facts,history=state['history'],hypotheses=state['hypotheses'],
                 state={'phase':phase,'frozen_independent':False,'trained':model['trained']},
-                observed_positions=observed_positions(rows,spec),graph_version=model['graph_version'],budget_left=left)
+                observed_positions=observed_positions(rows,spec),graph_version=model['graph_version'],budget_left=left,extras=extras)
     if not state['history']:
         ctx['imported_last_axes']=cfg.get('imported_last_axes',[])
     ctx.update(execution=deepcopy(cfg.get('execution',{})),training={'active_model_trained':model['trained']},
@@ -170,9 +185,13 @@ def choose(out,state,spec,cfg,model,rows,facts,left,allow_agent,provider,phase):
         schedules=[{'role':role,'plan':d['plan'],'operation':d['operator']}]
     if any(s['role']=='policy_frontier' for s in schedules) and not model['trained']:
         raise ValueError('Policy frontier requires an executable candidate')
-    if sum(len(c.expand_plan(s['plan'],spec)) for s in schedules)>left:
+    if d['operator']!='collect_repeat_block' and sum(len(c.expand_plan(s['plan'],spec)) for s in schedules)>left:
         raise ValueError('Proposed exploration would consume reserved validation trials')
-    return dict(decision=d,rule=rule,schedules=schedules,pre_facts=facts,
+    baseline={}
+    if d.get('evidence_target'):
+        from .collection_progress import members
+        baseline['evidence_before']=sorted(members(d['evidence_target']['counter'],all_visible,c.read(model['graph_path']),spec))
+    return dict(**baseline,decision=d,rule=rule,schedules=schedules,pre_facts=facts,
                 hypotheses=answer.get('hypotheses',state['hypotheses']),priors=ctx.get('effective_priors'),
                 development_plan=validation_plan(cfg,spec,'development'))
 
@@ -184,7 +203,34 @@ def dispatch(out,state,spec,cfg,batches,options):
     for ordinal,batch in enumerate(batches):
         token=f'{index}/{stage}/{ordinal}'
         existing=[t for t in state['trials'] if t['request'].get('stage_token')==token]
-        if existing and all(t['status'] in ('complete','budget_skipped') for t in existing) and not state['pending']:continue
+        auditing=stage=='execute' and spec['loop'].get('progress_check')
+        if auditing:
+            folder=out/'rounds'/f'round_{index:04d}'
+            baseline=folder/f'batch_{ordinal:02d}_evidence_before.json'
+            receipt=folder/f'batch_{ordinal:02d}_progress.json'
+            planned=c.read(folder/'plan.json')
+            auditing=bool(planned['decision'].get('evidence_target'))
+        if auditing:
+            from .collection_progress import members,check
+            from .graph import observed_edges
+            from .common import independent
+            def snapshot():
+                visible=[r for r in c.all_rows(out,state) if not independent(r) and not r.get('source_dev_evaluation_open')]
+                eligible=training_rows(visible,spec,index)
+                return visible,{'edges':observed_edges(eligible,spec),'node_ids':[r['node_id'] for r in eligible]}
+            if not baseline.exists():
+                visible,graph=snapshot()
+                c.atomic(baseline,sorted(members(planned['decision']['evidence_target']['counter'],visible,graph,spec)))
+            def commit_progress():
+                if receipt.exists():return
+                visible,graph=snapshot()
+                p=dict(planned,evidence_before=c.read(baseline))
+                data=check(out,state,spec,graph,visible,p,token=token)
+                data['expected_increment']=len(c.expand_plan(batch['plan'],spec))
+                c.atomic(receipt,data)
+        if existing and all(t['status'] in ('complete','budget_skipped') for t in existing) and not state['pending']:
+            if auditing:commit_progress()
+            continue
         state['stage_token']=token
         state['round_operation']=batch.get('operation','validate_B' if stage in ('independent','dev_validate') else None)
         if not state['pending']:
@@ -194,6 +240,7 @@ def dispatch(out,state,spec,cfg,batches,options):
                    if t['trial_id'] in state['pending']['trial_ids']):raise ValueError('Pending batch belongs to another stage')
         c.collect_pending(out,state,spec,cfg,**options)
         if state['pending']:return False
+        if auditing:commit_progress()
     return True
 
 
@@ -308,6 +355,16 @@ def run_locked(out,state,spec,cfg,*,real,executor,provider,allow_agent,interacti
         elif stage=='train':
             model=fit(out,state,spec,f'round_{index:04d}',rows)
             state['model']=model;state['revision']=index
+            planned=c.read(directory/'plan.json')
+            if spec['loop'].get('progress_check') and planned['decision'].get('evidence_target'):
+                from .collection_progress import check
+                from .common import independent
+                visible=[r for r in c.all_rows(out,state) if not independent(r) and not r.get('source_dev_evaluation_open')]
+                rec=check(out,state,spec,model,visible,planned)
+                subs=[c.read(p) for p in sorted(directory.glob('batch_*_progress.json'))]
+                rec['batch_no_progress']=[r for r in subs if not r['actual_increment']] if len(subs)>1 else []
+                state['collection_progress']=[r for r in state.get('collection_progress',[]) if r['round_index']!=index]+[rec]
+                c.atomic(directory/'collection_progress.json',rec)
             c.atomic(folder,model)
             state['round_stage']='dev_validate'
         elif stage=='dev_validate':
@@ -336,6 +393,10 @@ def run_locked(out,state,spec,cfg,*,real,executor,provider,allow_agent,interacti
             from .v5_director import adjudicate_predictions
             model=state['model'];planned=c.read(directory/'plan.json')
             facts=augmented_facts(out,state,spec,model,rows,records)+c.read(directory/'dev_validate.json')['acceptance']['facts']
+            progress=next((r for r in state.get('collection_progress',[]) if r['round_index']==index),None)
+            if progress:
+                from .collection_progress import no_progress_fact
+                facts.extend(no_progress_fact(r) for r in [progress,*progress.get('batch_no_progress',[])] if not r['actual_increment'])
             decisions=adjudicate_predictions(planned['decision'].get('predictions',[]),facts,planned['pre_facts'])
             state['prediction_results']=decisions
             c.atomic(directory/'hypotheses.json',decisions)
@@ -345,6 +406,10 @@ def run_locked(out,state,spec,cfg,*,real,executor,provider,allow_agent,interacti
             data=report(records,c.read(model['graph_path']),facts,decisions,spec,index,previous)
             if spec.get('facts', {}).get('terminal_based_direct_boundary'):
                 data['terminal_sources']={f['args'][0]:f['metrics'] for f in facts if f['pred']=='terminal_outcome_sources'}
+            if progress:
+                data['collection_progress']=progress
+                data['batch_progress']=[c.read(p) for p in sorted(directory.glob('batch_*_progress.json'))]
+                data['repeat_probe_budget']=dict(spent=state['spent'].get('repeat_probes',0),limit=spec['budget'].get('repeat_probes',0))
             acceptance=c.read(directory/'dev_validate.json')['acceptance']
             if spec['acceptance'].get('lower_bound_gates'):
                 data['development_point_pass_only']=acceptance['metrics'].get('development_point_pass_only',False)

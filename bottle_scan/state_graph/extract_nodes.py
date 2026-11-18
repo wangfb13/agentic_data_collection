@@ -58,6 +58,8 @@ def extract_nodes(sources,spec,out=None):
                     raise ValueError('An evaluated post condition requires a Boolean result')
                 row['post'][condition['id']]=result
             row['repeat_key']=repeat_key(row,spec)
+            if spec.get('noise',{}).get('relative_repeat_key'):
+                row['attrs']['repeat_placement_id']=row['provenance'].get('placement_reference_id')
             for key,value in window.get('deprecated_aliases',{}).items():
                 if key not in row:row[key]=value
             row['deprecated_fields']=list(window.get('deprecated_aliases',{}))

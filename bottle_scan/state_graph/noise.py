@@ -24,6 +24,14 @@ def fit_noise(rows,spec):
         from .v5_metric import fit_metric
         result['tac_metric']=fit_metric(rows,spec)
         if result['tac_metric']['status']=='ready':settings['tac_metric']={'weight':1.}
+    from .repeat_evidence import indices, placement_audit, scales
+    repeats=indices(rows,spec,combine=='joint')
+    relative=cfg.get('relative_repeat_key',False)
+    if relative:
+        from .repeat_evidence import relative_key
+        widths=result['repeat_resolution_mm']=scales(rows,spec)
+        result['repeat_groups']=[dict(key=relative_key(rows[ids[0]],spec,widths),
+            observations=[{'node_id':rows[i]['node_id'],'placement_reference_id':rows[i]['provenance']['placement_reference_id']} for i in ids]) for ids in repeats]
     for name,setting in settings.items():
         is_encoder=(name in ('tac_embed','tactile_embedding') or name==spec.get('observation',{}).get('metric',{}).get('input_modality')
                     or setting.get('encoder_features') is True or 'dino' in setting.get('extractor','').lower())
@@ -32,21 +40,20 @@ def fit_noise(rows,spec):
             continue
         X=np.array([raw(r,name,result) for r in rows]);item={'status':'insufficient_data','weight':float(setting.get('weight',1))}
         result['modalities'][name]=item
-        if len(X)<3:continue
+        if len(X):
+            item.update(input_dim=X.shape[1], dim=min(X.shape[1],cfg.get('pca_dim',32)))
+        if len(X)<3:
+            if relative:
+                dim=item.get('input_dim') or cfg.get('repeat_input_dims',{}).get(name,0)
+                item.update(placement_audit=placement_audit(rows,repeats,X.reshape(len(X),dim)),
+                            repeat_observations=sum(map(len,repeats)),repeat_dof=sum(len(v)-1 for v in repeats))
+            continue
         mean=X.mean(0);components=None
         if X.shape[1]>cfg.get('pca_dim',32):
             fit=PCA(min(cfg.get('pca_dim',32),len(X)-1),svd_solver='full').fit(X)
             components=fit.components_;Y=fit.transform(X);mean=fit.mean_
         else:Y=X-mean
-        groups=defaultdict(list);seen=set()
-        for i,r in enumerate(rows):
-            if int(r.get('window_index',0))!=0 or group_id(r) in seen:continue
-            seen.add(group_id(r))
-            key=r.get('repeat_key') or repeat_key(r,spec)
-            if combine=='joint':
-                p=r.get('provenance',{});key=(key,str(p.get('calibration_epoch',r.get('calibration_epoch'))))
-            groups[key].append(i)
-        repeats=[v for v in groups.values() if len(v)>1]
+        if relative:item['placement_audit']=placement_audit(rows,repeats,Y)
         item.update(mean=mean.tolist(),components=None if components is None else components.tolist(),input_dim=X.shape[1],dim=Y.shape[1],repeat_sources=[[rows[i]['node_id'] for i in ids] for ids in repeats])
         if not repeats: item['status']='insufficient_repeats';continue
         # Group centering consumes one degree of freedom. Without this scaling,

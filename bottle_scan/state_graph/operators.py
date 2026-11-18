@@ -138,6 +138,8 @@ def validate_decision(answer,context):
                 if name not in variables or variables[name]['kind']!='object_property' or value not in variables[name]['levels']:raise ValueError('Invalid block property')
     budget=context.get('budget_left',spec.get('budget',{}).get('max_new_trials',0))
     budget=min(budget,spec.get('budget',{}).get('max_batch_trials',budget))
+    if op=='collect_repeat_block':
+        budget=spec['budget']['repeat_probes']-context.get('spent',{}).get('repeat_probes',0)
     if count>budget:raise ValueError('Plan exceeds remaining trial budget')
     var=args.get('var');definition=variables.get(var,{})
     values=[c['settings'].get(var) for c in plan['cells']] if var else []
@@ -169,6 +171,9 @@ def validate_decision(answer,context):
     if op=='verify_edges' and not any(c.get('source_node_id')==args['source_node_id'] for c in plan['cells']):raise ValueError('Verify the specified inferred edge source')
     if op=='validate_B' and not {'Ready','NeedAction'}<=set(plan.get('cluster_classes',[])):raise ValueError('Validation must cover ready and action states')
     if v5:validate(answer,context)
+    if spec.get('loop',{}).get('progress_check'):
+        from .collection_progress import declaration
+        declaration(answer,context)
     return answer
 
 

@@ -60,7 +60,18 @@ def observed_positions(rows,spec):
 
 def generate_facts(graph,rows,labels,clusters,noise,spec,models=None):
     facts=[];active=spec['active_post_condition']
-    if any(m['status']!='ready' for m in noise['modalities'].values()):
+    if spec.get('operators',{}).get('repeat_block'):
+        missing={}
+        for name,m in noise['modalities'].items():
+            if m['status'] in ('ready','projected_only'):continue
+            dim=m.get('dim') or spec['noise'].get('repeat_input_dims',{}).get(name)
+            if dim is None:raise ValueError('Undeclared repeat dimension for '+name)
+            n=m.get('repeat_observations',m.get('residual_count',0))
+            missing[name]=dict(required=max(3,int(np.ceil(dim*spec['noise']['repeat_dimension_multiplier']))),observed=n)
+        if missing:
+            deficit=max(v['required']-v['observed'] for v in missing.values())
+            facts.append(fact('repeat_calibration_missing',[active],[r['node_id'] for r in rows],dict(missing=missing,deficit=deficit)))
+    elif any(m['status']!='ready' for m in noise['modalities'].values()):
         facts.append(fact('repeat_calibration_missing',[active],[r['node_id'] for r in rows],{'requires':'independent repeated windows at matched settings'}))
     outcomes=[r for r in rows if r.get('is_terminal') and r['post'][active]['evaluated']]
     if len(outcomes)<spec.get('models',{}).get('min_value_nodes',8):

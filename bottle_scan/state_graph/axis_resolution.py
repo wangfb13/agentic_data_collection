@@ -50,13 +50,18 @@ def axis_observable(rows, observed, D, spec, axis):
     moves = [e for e in observed if single_axis(e,spec)==axis and
              np.isfinite(D[index[e['source']],index[e['target']]])]
     change = [D[index[e['source']], index[e['target']]] for e in moves]
+    from .repeat_evidence import indices
     repeats = defaultdict(dict)
-    for i,r in enumerate(rows):
-        if r.get('window_index') != 0 or not r.get('window_valid',True):continue
-        key = r.get('repeat_key') or repeat_key(r,spec)
-        epoch = r.get('provenance',{}).get('calibration_epoch')
-        repeats[key,epoch].setdefault(group_id(r), i)
-    noise = [D[i,j] for ids in repeats.values() for i,j in combinations(ids.values(),2) if np.isfinite(D[i,j])]
+    if spec.get('noise',{}).get('relative_repeat_key'):
+        groups=indices(rows,spec)
+    else:
+        for i,r in enumerate(rows):
+            if r.get('window_index') != 0 or not r.get('window_valid',True):continue
+            key = r.get('repeat_key') or repeat_key(r,spec)
+            epoch = r.get('provenance',{}).get('calibration_epoch')
+            repeats[key,epoch].setdefault(group_id(r), i)
+        groups=[list(v.values()) for v in repeats.values()]
+    noise = [D[i,j] for ids in groups for i,j in combinations(ids,2) if np.isfinite(D[i,j])]
     signal = float(np.median(change)) if change else None
     background = float(np.median(noise)) if noise else None
     known = len(change)>=spec['graph']['resolution_min_edges'] and bool(noise)

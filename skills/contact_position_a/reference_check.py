@@ -9,13 +9,32 @@ def evaluate(reference_row, current_row, bundle, geometry):
     noise=(bundle or {}).get('noise') or {}
     report=dict(passed=False,status='metric_unavailable',similar_radius=radius,
                 model_id=(bundle or {}).get('model_id'),noise_model_id=noise.get('model_id'))
+    if geometry.get('reference_check_ready_modalities'):
+        active = noise.get('active_modalities', [])
+        names = [n for n in active if noise['modalities'][n]['status'] == 'ready']
+        radius_names=(bundle or {}).get('graph',{}).get('radius_modalities',active)
+        report.update(used_modalities=names, radius_modalities=radius_names)
+        if not set(names).intersection(geometry.get('tactile_geometry_modalities', ['tac','tac_metric'])):
+            return dict(report, reason='no_ready_tactile_geometry')
+        # V5 joint fit constructs the graph radius from exactly the ready subset.
+        if set(names)!=set(radius_names) or noise.get('combine') != 'joint':
+            return dict(report, reason='no_matching_joint_radius')
+        noise={**noise,'active_modalities':names}
+        if 'tac_metric' not in names:noise.pop('metric_normalized_per_mm',None)
+        report['joint_degrees_of_freedom'] = sum(noise['modalities'][n]['dim'] for n in names)
     if not noise.get('active_modalities') or radius is None or not np.isfinite(radius):return report
     if reference_row is None or current_row is None:return dict(report,status='window_unavailable')
     p,a=pose_error(reference_row['provenance']['measured_pose'],current_row['provenance']['measured_pose'])
     report.update(position_error_mm=p,orientation_error_deg=a)
     if p>geometry['verification_pose_tolerance_mm'] or a>geometry['orientation_tolerance_deg']:
         return dict(report,status='pose_mismatch')
-    if reference_row['extractor_versions']!=current_row['extractor_versions']:
+    if geometry.get('reference_check_ready_modalities'):
+        names = [noise['tac_metric']['input'] if n=='tac_metric' else n for n in report['used_modalities']]
+        compatible = all(reference_row['extractor_versions'].get(n) is not None and
+                         reference_row['extractor_versions'][n]==current_row['extractor_versions'].get(n) for n in names)
+    else:
+        compatible = reference_row['extractor_versions']==current_row['extractor_versions']
+    if not compatible:
         return dict(report,status='feature_mismatch')
     d=measurement_distance(reference_row,current_row,noise)
     return dict(report,status='passed' if d<=radius else 'distance_exceeded',passed=bool(d<=radius),
@@ -49,6 +68,11 @@ def verify(io, answer):
             with io.contact(index) as raw:
                 if raw and raw['provenance'].get('placement_continuity') is not False:
                     spec=bundle['spec']
+                    if geom.get('reference_check_ready_modalities'):
+                        from copy import deepcopy
+                        spec=deepcopy(spec)
+                        names={bundle['noise']['tac_metric']['input'] if n=='tac_metric' else n for n in result['used_modalities']}
+                        spec['observation']['modalities']={n:spec['observation']['modalities'][n] for n in names}
                     rows=[]
                     for name,window in [('reference',old),('verification',raw)]:
                         dest=folder/name;dest.mkdir(exist_ok=True)

@@ -19,7 +19,7 @@ from .operators import validate_decision
 from .acceptance import evaluate_B
 
 COLLECT={'collect_seed','collect_outcomes','collect_transitions','expand_range','densify','activate_variable',
-         'probe_hidden_variable','block_by_property','repeat_state','verify_edges','validate_B','probe_amplitude','recalibrate_reference','probe_recovery_frontier','request_expert_recovery'}
+         'probe_hidden_variable','block_by_property','repeat_state','verify_edges','validate_B','probe_amplitude','collect_repeat_block','recalibrate_reference','probe_recovery_frontier','request_expert_recovery'}
 
 
 def atomic(path,value):
@@ -134,7 +134,10 @@ def queue_plan(out,state,spec,plan,role,*,source_review=None):
     items=expand_plan(plan,spec)
     v5=spec.get('graph_schema')=='state_graph_v5'
     reserve=state.get('independent_reserve',0) if role!='independent' else 0
-    if state['spent']['trials']+len(items)+reserve>spec['budget']['max_new_trials']:raise ValueError('Trial budget exhausted')
+    if state.get('round_operation')=='collect_repeat_block':
+        if role!='exploration' or len(items)+state['spent'].get('repeat_probes',0)>spec['budget']['repeat_probes']:
+            raise ValueError('Repeat probe budget exhausted or invalid role')
+    elif state['spent']['trials']+len(items)+reserve>spec['budget']['max_new_trials']:raise ValueError('Trial budget exhausted')
     model=state['frozen'] if role=='independent' else state.get('model')
     if role in ('development','independent','policy_frontier') and (not model or not model.get('trained')):raise ValueError('B needs a trained candidate')
     signature=[plan,role,state['revision']]
@@ -224,7 +227,8 @@ def requeue_attempt(out, state, trial, reason, *, defer=False):
     trial['status'] = 'deferred' if deferred else 'queued'
     trial.pop('started_ns')
     trial.pop('error', None)
-    state['spent']['trials'] -= 1
+    if trial['request'].get('operation')!='collect_repeat_block':
+        state['spent']['trials'] -= 1
     state['phase'] = 'ready_to_collect'
     atomic(Path(out)/'state.json', state)
     label = '已暂缓，保留记录，继续本批下一条' if deferred else '本次未计数，保留同一试次'
@@ -277,7 +281,16 @@ def collect_pending(out,state,spec,cfg,*,real=False,executor=None,interactive=Tr
         if not recovering:
             if not real and executor is None:
                 state['phase']='ready_to_collect';atomic(out/'state.json',state);return
-            if 'dispatch_attempts' in state:
+            repeat=trial['request'].get('operation')=='collect_repeat_block'
+            if repeat:
+                n=state['spent'].get('repeat_probes',0)
+                if n>=spec['budget']['repeat_probes']:
+                    trial.update(status='budget_skipped',reason='repeat_probe_budget')
+                    atomic(out/'state.json',state)
+                    continue
+                state['spent']['repeat_probes']=n+1
+                trial.setdefault('repeat_dispatch_ordinals',[]).append(n+1)
+            elif 'dispatch_attempts' in state:
                 limit=spec['budget'].get('max_dispatch_attempts',spec['budget']['max_new_trials'])
                 reserve=0 if trial['request']['post_freeze'] else state['independent_reserve']
                 if state['dispatch_attempts']>=limit-reserve:
@@ -286,7 +299,8 @@ def collect_pending(out,state,spec,cfg,*,real=False,executor=None,interactive=Tr
                     continue
                 state['dispatch_attempts']+=1
                 trial.setdefault('dispatch_ordinals',[]).append(state['dispatch_attempts'])
-            trial['status']='started';trial['started_ns']=time.time_ns();state['spent']['trials']+=1
+            trial['status']='started';trial['started_ns']=time.time_ns()
+            if not repeat:state['spent']['trials']+=1
             state['robot_started']=bool(state['robot_started'] or real);atomic(out/'state.json',state)
         choose = on_interruption if interactive else None
         try:

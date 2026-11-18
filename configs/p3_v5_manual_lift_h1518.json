@@ -1,0 +1,61 @@
+{
+  "consumer": {
+    "auto_l2": false
+  },
+  "observation": {
+    "tac_version": "legacy_pixel"
+  },
+  "loop": {
+    "run_through_budget": true,
+    "progress_check": true,
+    "no_progress_cooldown": 2
+  },
+  "facts": {
+    "amplitude_coverage": true,
+    "min_bin_outcomes": 2,
+    "terminal_based_direct_boundary": true
+  },
+  "director": {
+    "score_based_axis_choice": true,
+    "pointwise_scoring": true,
+    "trial_costs": {
+      "collect_seed": 1.0,
+      "collect_outcomes": 1.0,
+      "expand_range": 1.0,
+      "densify": 1.0,
+      "activate_variable": 1.0,
+      "block_by_property": 1.0,
+      "probe_hidden_variable": 1.0,
+      "repeat_state": 1.0,
+      "validate_B": 1.0,
+      "set_allocation": 1.0,
+      "collect_transitions": 1.25,
+      "verify_edges": 1.25,
+      "probe_amplitude": 1.25,
+      "probe_recovery_frontier": 1.5,
+      "request_expert_recovery": 2.0
+    }
+  },
+  "geometry": {
+    "reference_check_ready_modalities": true,
+    "tactile_geometry_modalities": [
+      "tac",
+      "tac_metric"
+    ]
+  },
+  "noise": {
+    "relative_repeat_key": true,
+    "repeat_block_margin": 2,
+    "repeat_mass_class": "light",
+    "repeat_input_dims": {
+      "force": 12,
+      "tac": 6
+    }
+  },
+  "operators": {
+    "repeat_block": true
+  },
+  "budget": {
+    "repeat_probes": 48
+  }
+}

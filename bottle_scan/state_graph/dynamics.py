@@ -75,12 +75,17 @@ def target_metric(rows,mapping,noise):
     # Projection is in raw observation components, so estimate its repeated noise
     # directly rather than taking indices of a PCA-compressed covariance.
     from sklearn.covariance import LedoitWolf
+    key_by_id=None
+    if 'repeat_groups' in noise:
+        key_by_id={r['node_id']:g['key'] for g in noise['repeat_groups'] for r in g['observations']}
     result={};offset=0
     for name,indices in mapping.items():
         groups=defaultdict(list);seen=set()
         for r in rows:
             if r.get('window_index',0)!=0 or group_id(r) in seen:continue
-            seen.add(group_id(r));groups[r['repeat_key']].append(np.asarray(r['obs'][name])[indices])
+            key=key_by_id.get(r['node_id']) if key_by_id is not None else r.get('repeat_key')
+            if key is None:continue
+            seen.add(group_id(r));groups[key].append(np.asarray(r['obs'][name])[indices])
         repeated=[(np.asarray(v)-np.mean(v,axis=0))*np.sqrt(len(v)/(len(v)-1)) for v in groups.values() if len(v)>1]
         if not repeated:return None
         cov=LedoitWolf(assume_centered=True).fit(np.concatenate(repeated)).covariance_

@@ -23,15 +23,17 @@ def pairs(rows,spec):
     name=spec['observation']['metric']['input_modality']
     lookup={r['node_id']:r for r in rows};groups=defaultdict(dict);items=[]
     for r in rows:
-        if r.get('window_index')==0:
+        if r.get('window_index')==0 and not spec.get('noise',{}).get('relative_repeat_key'):
             groups[(r.get('repeat_key') or repeat_key(r,spec),str(r.get('provenance',{}).get('calibration_epoch',r.get('calibration_epoch'))))].setdefault(group_id(r),r)
         prev=lookup.get(r.get('previous_node_id'))
         if prev and prev.get('window_valid') and r.get('window_valid') and group_id(r)==group_id(prev):
             y=measured_rh(prev,r,spec)
             if y is not None and np.isfinite(y).all():
                 items.append((prev,r,y,'action'))
-    for units in groups.values():
-        v=list(units.values())
+    from .repeat_evidence import indices
+    grouped=([[rows[i] for i in ids] for ids in indices(rows,spec)] if spec.get('noise',{}).get('relative_repeat_key')
+             else [list(units.values()) for units in groups.values()])
+    for v in grouped:
         # Centering all pairs is unnecessary. Adjacent distinct trials supply independent repeat comparisons.
         for i in range(1,len(v)):items.append((v[i-1],v[i],np.zeros(2),'repeat'))
     return [(model_observation(b,[name])[name]-model_observation(a,[name])[name],y,kind,
