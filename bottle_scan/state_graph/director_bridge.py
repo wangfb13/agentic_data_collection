@@ -112,6 +112,12 @@ def decide(ctx,output_dir,*,allow_agent=False,provider=None,provider_settings=No
     result={'status':'accepted' if answer else 'invalid_response','answer':answer,'attempts':attempts,'robot_executed':False,'graph_version':ctx['graph_version']}
     if cfg:
         result.update(director_mode=cfg.get('mode','llm'),effective_priors=deepcopy(ctx.get('effective_priors',{})))
+    if answer and ctx.get('axis_prior_conflicts'):
+        chosen=answer['args'].get('var') if answer['args'].get('action_design')=='axis_both_signs' else None
+        answer['axis_prior_tradeoff']=[dict(conflict,decision='sample_underrepresented_axis' if chosen==conflict['var']
+            else 'defer_axis_balance',operator=answer['operator'],reason=(
+                '两轴实测覆盖不均，本批优先在缺样轴补正负转移；保留另一轴的采样偏好。'
+                if chosen==conflict['var'] else answer['reason'])) for conflict in ctx['axis_prior_conflicts']]
     if answer:
         hypotheses=deepcopy(ctx['hypotheses'])
         for update in answer['hypotheses_update']:

@@ -13,7 +13,7 @@ OUTPUT = PARENT.with_name(PARENT.name + '_forcepolicy')
 PROTOCOL = 'p3_ah_forcepolicy_lift_v1'
 
 
-def initialize(parent, out, *, extra_trials=60, consumer=None, version=4, overrides=None, ranking_report=None):
+def initialize(parent, out, *, extra_trials=None, consumer=None, version=4, overrides=None, ranking_report=None):
     parent, out = Path(parent).resolve(), Path(out).resolve()
     if out == parent:
         raise ValueError('The seed campaign must remain separate')
@@ -23,6 +23,8 @@ def initialize(parent, out, *, extra_trials=60, consumer=None, version=4, overri
             protect_output(out,kind='P3-rounds')
         if (out/'state.json').exists():
             manifest = campaign.read(out/'continuation.json')
+            if extra_trials is not None and extra_trials != manifest['new_budget']:
+                raise ValueError('Requested trial budget differs from the initialized campaign')
             if version==4 and (out/'v5_output.json').exists():raise ValueError('This directory contains a v5 continuation')
             if version==5 and overrides:
                 from bottle_scan.state_graph.v5_profile import merge
@@ -34,10 +36,11 @@ def initialize(parent, out, *, extra_trials=60, consumer=None, version=4, overri
             if manifest['source'] != str(parent) or manifest['protocol'] != PROTOCOL:
                 raise ValueError('Continuation directory belongs to another experiment')
             return
+        extra_trials = 60 if extra_trials is None else extra_trials
         from .ah_transition_v5 import read_source
         from contextlib import nullcontext
         v5_parent=version==5 and (parent/'v5_output.json').is_file()
-        seed_episodes=[];repairs=[]
+        seed_episodes=[];repairs=[];consumer_audit=[]
         # state.json is atomically published. Only immutable, completed trial IDs
         # from this snapshot are imported, including when the source has pending work.
         with (nullcontext() if v5_parent else read_source(parent) if version==5 else campaign.ownership(parent)):
@@ -49,7 +52,9 @@ def initialize(parent, out, *, extra_trials=60, consumer=None, version=4, overri
                 raise ValueError('Source P3 has unsettled trials or another start mode')
             if v5_parent:
                 from .p3_import import snapshot
-                rows,origins,seed_episodes,repairs=snapshot(parent,state,spec,cfg)
+                from bottle_scan.state_graph.v5_profile import configure
+                auditing=configure(spec,overrides).get('import',{}).get('consumer_audit')
+                rows,origins,seed_episodes,repairs=snapshot(parent,state,spec,cfg,audit=consumer_audit if auditing else None)
             else:
                 rows = [r for r in campaign.all_rows(parent,state) if not independent(r)]
                 origins = [{k:t[k] for k in ('trial_id','directory','outcome_status')} for t in state['trials'] if t['status']=='complete']
@@ -65,7 +70,7 @@ def initialize(parent, out, *, extra_trials=60, consumer=None, version=4, overri
             exploration_context='skills.contact_position_a.p3_loop:exploration_context',
             validate_collection_cell='skills.contact_position_a.p3_loop:validate_plan')
         count = spec['acceptance']['independent_B']['min_trials']
-        if extra_trials < count + spec['acceptance']['development_B']['min_trials'] + 1:
+        if version!=5 and extra_trials < count + spec['acceptance']['development_B']['min_trials'] + 1:
             raise ValueError('Continuation budget cannot fit both B sets and A')
         spec['budget'].update(max_new_trials=extra_trials,max_batch_trials=count)
         cfg.update(spec=str(out/'instance.json'), sources=[], consumer=physics,
@@ -117,9 +122,30 @@ def initialize(parent, out, *, extra_trials=60, consumer=None, version=4, overri
                     row.setdefault('post',{}).setdefault(post['id'],dict(evaluated=False,success=None,evidence=[]))
         else:
             cfg['execution']['sampling_preference']['instruction'] += cfg['execution']['phase']
+        if version==5 and not spec['loop'].get('budget_check') and extra_trials < count + spec['acceptance']['development_B']['min_trials'] + 1:
+            raise ValueError('Continuation budget cannot fit both B sets and A')
+        if version==5 and spec['loop'].get('budget_check'):
+            from bottle_scan.state_graph.rounds import check_round_budget, validation_plan
+            check_round_budget(spec,cfg,len(campaign.expand_plan(validation_plan(cfg,spec,'independent'),spec)))
+        if version==5 and spec.get('import',{}).get('consumer_audit') and not v5_parent:
+            from .consumer_audit import classify
+            for trial in state['trials']:
+                req=trial['request']
+                if trial['status']!='complete' or req.get('role')=='independent' or independent(req) or req.get('post_freeze'):continue
+                result=campaign.read(Path(trial['directory'])/'result.json')
+                if independent(result) or any(independent(r) for r in result.get('nodes',[])):continue
+                terminals=[r for r in result.get('nodes',[]) if r.get('is_terminal')]
+                consumer_audit.append(dict(trial_id=trial['trial_id'],directory=trial['directory'],consumers={
+                    cond['id']:classify(cond['id'],cond,result,terminals) for cond in spec['post_conditions']}))
         if v5_parent:
             campaign.atomic(out/'seed_episodes.json',seed_episodes)
-            campaign.atomic(out/'import_receipt.json',dict(source=str(parent),state_digest=campaign.digest(state),source_phase=state['phase'],completed_trials=len(origins),restored_forcepolicy_nodes=repairs))
+        if v5_parent or (version==5 and spec.get('import',{}).get('consumer_audit')):
+            receipt=dict(source=str(parent),state_digest=campaign.digest(state),source_phase=state['phase'],
+                         completed_trials=len(origins),restored_forcepolicy_nodes=repairs)
+            if spec.get('import',{}).get('consumer_audit'):
+                from .consumer_audit import receipt as summarize_import
+                receipt['consumer_audit']=summarize_import(consumer_audit)
+            campaign.atomic(out/'import_receipt.json',receipt)
         campaign.atomic(out/'continuation.json',dict(protocol=PROTOCOL,source=str(parent),
                       trials=origins,source_spent=state['spent'],seed_nodes=len(rows),
                       source_state_digest=campaign.digest(state),new_budget=extra_trials,**({'graph_overrides':overrides or {}} if version==5 else {})))
@@ -206,6 +232,7 @@ def menu(ctx, options, state, training):
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--graph-version',type=int, choices=(4,5),default=5)
+    p.add_argument('--extra-trials',type=int,help='New trial budget; fresh campaigns default to 60')
     p.add_argument('--source',type=Path,default=PARENT)
     p.add_argument('--out',type=Path)
     p.add_argument('--director-mode',choices=('llm','fixed_priority'))
@@ -226,7 +253,7 @@ def main(argv=None):
         p.error('Director, calibration and ranking overrides require v5')
     overrides=campaign.read(args.overrides) if args.overrides else {}
     if args.director_mode:overrides.setdefault('director',{})['mode']=args.director_mode
-    initialize(args.source,out,version=args.graph_version,ranking_report=args.ranking_report,overrides=overrides)
+    initialize(args.source,out,extra_trials=args.extra_trials,version=args.graph_version,ranking_report=args.ranking_report,overrides=overrides)
     cfg=campaign.read(out/'config.json')
     if args.graph_version==5:
         from bottle_scan.state_graph.calibrations import preflight

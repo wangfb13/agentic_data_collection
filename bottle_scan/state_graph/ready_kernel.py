@@ -7,6 +7,19 @@ from scipy.stats import beta
 from .common import group_id
 
 
+def select_cost(scores, positives, settings):
+    fp,miss=settings['false_release_cost'],settings['miss_cost']
+    if any(not np.isfinite(x) or x<=0 for x in (fp,miss)):raise ValueError('Ready costs must be finite and positive')
+    cap=settings['max_false_release_rate']
+    eligible=[]
+    for item in scores:
+        item['misses']=positives-item['correct']
+        item['cost']=fp*item['false']+miss*item['misses']
+        if cap is None or (item['false_release_rate'] is not None and item['false_release_rate']<=cap):
+            eligible.append(item)
+    return min(eligible,key=lambda x:(x['cost'],-x['threshold'])) if eligible and positives else None
+
+
 def estimate(train, distances, condition, settings):
     cid = condition['id']
     groups = defaultdict(list)
@@ -28,7 +41,7 @@ def estimate(train, distances, condition, settings):
     bandwidths = settings['ready_bandwidths']
     if not bandwidths or any(not np.isfinite(h) or h <= 0 for h in bandwidths):
         raise ValueError('Ready bandwidths must be positive')
-    if not 0 <= settings['max_false_release_rate'] <= 1 or not settings['ready_thresholds'] or any(not 0 <= t <= 1 for t in settings['ready_thresholds']):
+    if (settings['max_false_release_rate'] is not None and not 0 <= settings['max_false_release_rate'] <= 1) or not settings['ready_thresholds'] or any(not 0 <= t <= 1 for t in settings['ready_thresholds']):
         raise ValueError('Ready error cap and threshold candidates must be probabilities')
     best = None
     for h in bandwidths:
@@ -54,9 +67,12 @@ def estimate(train, distances, condition, settings):
         failures = int((~labels).sum())
         scores.append(dict(threshold=t, correct=int((votes & labels).sum()), false=false,
                            failures=failures, false_release_rate=false/failures if failures else None))
-    feasible = [v for v in scores if v['correct'] and v['false_release_rate'] is not None
-                and v['false_release_rate'] <= settings['max_false_release_rate']]
-    chosen = max(feasible, key=lambda v: (v['correct'], -v['false'], v['threshold'])) if feasible else None
+    if settings.get('cost_based_threshold'):
+        chosen=select_cost(scores,int(labels.sum()),settings)
+    else:
+        feasible=[v for v in scores if v['correct'] and v['false_release_rate'] is not None
+                  and v['false_release_rate']<=settings['max_false_release_rate']]
+        chosen=max(feasible,key=lambda v:(v['correct'],-v['false'],v['threshold'])) if feasible else None
     cutoff = chosen['threshold'] if chosen else None
     meta = dict(h_ready=h, threshold=cutoff, candidates=scores, kernel=settings['ready_kernel'],
                 training_groups=len(members), log_likelihood=best[0],

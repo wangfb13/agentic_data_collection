@@ -51,6 +51,12 @@ def applicable_operators(facts,spec,rule,state=None):
     for f in find('inferred_edge_unverified'):
         if f['args'][-1]==active and f['metrics']['path_fraction']>.5:
             add('verify_edges',[f],source_node_id=f['metrics']['source_node_id'],edge_id=f['metrics']['edge_id'])
+    if spec.get('loop',{}).get('dev_gate'):
+        for f in find('candidate_lacks_capability'):
+            if f['args']!=[active]:continue
+            m=f['metrics'];point={k:v for k,v in m.get('region',{}).items() if v is not None}
+            for op in ('collect_outcomes','collect_transitions'):
+                add(op,[f],post_condition=active,target_point=point,condition=m.get('condition',{}))
     gaps = [f for f in find('development_class_missing') if f['args'] == [active]]
     for f in gaps:
         add('collect_outcomes', [f], post_condition=active)

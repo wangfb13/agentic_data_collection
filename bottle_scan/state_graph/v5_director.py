@@ -73,6 +73,7 @@ def proposal(ctx,offer):
     budget=min(ctx['budget_left'],spec['budget'].get('max_batch_trials',ctx['budget_left']))
     condition=a.get('condition') if isinstance(a.get('condition'),dict) else {}
     setting=deepcopy(ctx.get('execution',{}).get('fixed_settings',{}))
+    setting.update(a.get('target_point',{}))
     properties=[k for k,d in decl.items() if d['kind']=='object_property']
     choices=[[condition[k]] if k in condition else list(decl[k]['levels']) for k in properties]
     blocks=[dict(zip(properties,c)) for c in product(*choices)]
@@ -120,16 +121,18 @@ def proposal(ctx,offer):
     elif op=='probe_hidden_variable':
         for x in v['levels']:add({var:x})
     elif op in ('collect_transitions','verify_edges'):
-        origin={k:float(np.mean(x)) for k,x in a.get('intervals',{}).items()}
+        origin={**a.get('target_point',{}),**{k:float(np.mean(x)) for k,x in a.get('intervals',{}).items()}}
         if op=='verify_edges':
             f=next(f for f in ctx['facts'] if f['pred']=='inferred_edge_unverified' and f['metrics']['edge_id']==a['edge_id'])
             add(acts=[{'kind':space['id'],'u':f['metrics']['u']}])['source_node_id']=a['source_node_id']
         else:
+            both=a.get('action_design')=='axis_both_signs'
             counter=a.get('action_design')=='crossed_sign_amplitude'
             for i,k in enumerate(action_vars):
+                if both and k!=var:continue
                 lo,hi=decl[k]['envelope'];lim=spec['safety_envelope']['max_action'][i]
                 pos=origin.get(k,decl[k].get('reference',0))
-                for sign in ((1,-1) if counter else ((1,) if hi>pos else (-1,))):
+                for sign in ((1,-1) if counter or both else ((1,) if hi>pos else (-1,))):
                     room=min(lim,hi-pos if sign==1 else pos-lo)
                     if room<=0:continue
                     n=spec['dynamics']['min_amplitude_levels'] if counter else 1
@@ -216,6 +219,11 @@ def finalize_context(ctx):
             elif isinstance(obj,list):
                 for child in obj:strip(child)
         strip(ctx)
+    if spec.get('facts',{}).get('axis_balance') and cfg.get('use_priors',True):
+        sampling=ctx.get('effective_priors',{}).get('placement_sampling',{})
+        preferred=[k for k,p in sampling.items() if isinstance(p,dict) and 'preferred' in p.values()]
+        ctx['axis_prior_conflicts']=[dict(var=f['args'][0],fact_id=f['id'],counts=f['metrics']['counts'],preferred=preferred)
+            for f in ctx['facts'] if f['pred']=='axis_undersampled' and preferred and f['args'][0].split('_')[0] not in preferred]
     if cfg.get('checkable_predictions'):
         ctx['prediction_contract']={'required':'non-empty predictions with pred, exact args, expect=appears|disappears|metric; metric additionally requires metric,comparison,value; optional scope by condition/model_id',
                                     'comparisons':list(COMPARE),'predicate_schema':sorted(PREDICATES|{f['pred'] for f in ctx['facts']}),'numeric_metric_schema':METRICS}
@@ -227,6 +235,8 @@ def finalize_context(ctx):
             try:
                 candidate=proposal(ctx,offer);validate_decision(candidate,ctx)
                 item.update(scoring(ctx,offer,candidate),proposal=candidate)
+                if spec.get('facts',{}).get('axis_balance'):
+                    item['axis_evidence_priority']=int(offer['bindings'].get('action_design')=='axis_both_signs')
             except (KeyError,ValueError,TypeError) as exc:item.update(score=None,proposal=None,unavailable_reason=str(exc))
             items.append(item)
         ctx['operator_scores']=items
@@ -243,7 +253,7 @@ def fixed_decision(ctx):
         # Positive exchange of data takes precedence over idle, with an explicit stable tie break.
         gap_ids={f['id'] for f in ctx['facts'] if f['pred']=='frontier_gap'}
         direct_gap=bool(gap_ids.intersection(v['premises'])) and v['operator']=='request_expert_recovery'
-        return (v['operator']=='pause',m is None,-float(m or 0),not direct_gap,digest(v['proposal']))
+        return (v['operator']=='pause',v['bindings'].get('action_design')!='axis_both_signs',m is None,-float(m or 0),not direct_gap,digest(v['proposal']))
     return deepcopy(min(options,key=order)['proposal'])
 
 

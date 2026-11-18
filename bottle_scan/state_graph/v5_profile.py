@@ -16,7 +16,7 @@ def merge(base,changes):
     return result
 
 
-def configure(spec,overrides=None,*,version=5,revision_h=True):
+def configure(spec,overrides=None,*,version=5,revision_h=True,revision_h811=True):
     if version==4:
         if spec.get('graph_schema')=='state_graph_v5':
             raise ValueError('Select the original v4 spec for an exact legacy replay')
@@ -24,8 +24,9 @@ def configure(spec,overrides=None,*,version=5,revision_h=True):
     if version!=5:
         raise ValueError('Unknown graph version')
     defaults={}
-    for path in sorted(PROFILES.glob('*.json')):
-        if path.name=='h_revision.json' and not revision_h:continue
+    for path in sorted(PROFILES.glob('*.json'),key=lambda p:(p.name=='h8_h11.json',p.name)):
+        if path.name=='h8_h11.json' and not revision_h811:continue
+        if path.name in ('h_revision.json','h8_h11.json') and not revision_h:continue
         defaults=merge(defaults,json.loads(path.read_text()))
     configured=(merge(defaults,spec) if spec.get('graph_schema')=='state_graph_v5' else merge(spec,defaults))
     configured['graph_schema']='state_graph_v5'
@@ -34,6 +35,9 @@ def configure(spec,overrides=None,*,version=5,revision_h=True):
     if (overrides or {}).get('observation',{}).get('tac_version')=='legacy_pixel':
         result['observation'].pop('tac_version_requested',None)
         result['observation'].pop('tac_calibration_status',None)
+    sinks=result.get('sinks',{})
+    if sinks.get('kernel_ready') and not sinks.get('cost_based_threshold') and sinks.get('max_false_release_rate') is None:
+        sinks['max_false_release_rate']=json.loads((PROFILES/'h_revision.json').read_text())['sinks']['max_false_release_rate']
     configure_facts(result)
     return result
 

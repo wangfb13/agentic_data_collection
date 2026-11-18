@@ -229,6 +229,9 @@ def revise(base,graph,rows,labels,clusters,noise,spec,models):
     if ops.get('handle_drift_and_unsupported'):skip.add('unsupported')
     if spec.get('labels',{}).get('include_inferred') is False:skip.add('inferred_edge_unverified')
     facts=[f for f in base if f['pred'] not in skip];byid={r['node_id']:r for r in rows}
+    if cfg.get('axis_balance'):
+        from .axis_resolution import balance_facts
+        facts.extend(balance_facts(graph,spec))
     for cid,calibration in graph.get('ready_calibration',{}).items():
         if calibration['threshold'] is None:
             facts.append(_fact('ready_threshold_unattainable',[cid],rows,calibration))

@@ -25,12 +25,34 @@ def validation_plan(cfg, spec, role):
     return plan
 
 
+def check_round_budget(spec, cfg, reserve):
+    loop = spec['loop']
+    if not loop.get('budget_check'):
+        return
+    if any(type(loop[k]) is not int or loop[k] < 1 for k in ('min_rounds','exploration_per_round')):
+        raise ValueError('min_rounds and exploration_per_round must be positive integers')
+    dev = len(c.expand_plan(validation_plan(cfg,spec,'development'),spec))
+    minimum = reserve + loop['min_rounds'] * (dev + loop['exploration_per_round'])
+    budget = spec['budget']
+    if min(budget['max_new_trials'], budget.get('max_dispatch_attempts', budget['max_new_trials'])) < minimum:
+        raise ValueError(f"Insufficient P3 budget: minimum={minimum} ({reserve} independent + "
+                         f"{loop['min_rounds']} × ({dev} development + {loop['exploration_per_round']} exploration)); "
+                         f"requested={budget['max_new_trials']}, dispatch_limit={budget.get('max_dispatch_attempts')}")
+
+
+def exploration_allowance(available, dev_count, spec, index):
+    loop = spec['loop']
+    future = max(0,loop['min_rounds']-index) if loop.get('budget_check') else 0
+    return available - dev_count - future * (dev_count + loop.get('exploration_per_round',0))
+
+
 def initialize_rounds(state, spec, cfg):
     independent=validation_plan(cfg,spec,'independent')
     reserve=len(c.expand_plan(independent,spec))
     if spec['acceptance'].get('lower_bound_gates'):
         from .rate_gates import check_plan
         check_plan(independent,reserve,spec['acceptance'])
+    check_round_budget(spec,cfg,reserve)
     if reserve>min(spec['budget']['max_new_trials'],spec['budget'].get('max_dispatch_attempts',spec['budget']['max_new_trials'])):raise ValueError('Independent reservation exceeds the campaign budget')
     rule=state['rule']; variables=rule['variables']
     axes={k:kdef for k,kdef in variables.items() if 'range' in kdef}
@@ -237,13 +259,13 @@ def run_locked(out,state,spec,cfg,*,real,executor,provider,allow_agent,interacti
             elif state.get('next_plan'):
                 planned=state['next_plan']
             else:
-                if available < dev_count+1:
+                if exploration_allowance(available,dev_count,spec,index)<1:
                     state.update(phase='inconclusive',stop_reason='insufficient_budget_for_first_round')
                     c.atomic(out/'state.json',state);break
                 model=state.get('model') or fit(out,state,spec,'bootstrap',rows)
                 state['model']=model
                 facts=augmented_facts(out,state,spec,model,rows,records)
-                planned=choose(out,state,spec,cfg,model,rows,facts,available-dev_count,allow_agent,provider,'plan')
+                planned=choose(out,state,spec,cfg,model,rows,facts,exploration_allowance(available,dev_count,spec,index),allow_agent,provider,'plan')
                 if planned is None:break
             planned['dev_plan_digest']=digest(planned['development_plan'])
             c.atomic(folder,planned)
@@ -267,11 +289,23 @@ def run_locked(out,state,spec,cfg,*,real,executor,provider,allow_agent,interacti
             model=c.read(directory/'train.json');planned=c.read(directory/'plan.json')
             if model['model_id']!=state['model']['model_id'] or digest(planned['development_plan'])!=planned['dev_plan_digest']:
                 raise ValueError('Frozen development candidate or planned distribution changed')
-            if model['trained'] and not dispatch(out,state,spec,cfg,[dict(role='development',plan=planned['development_plan'])],options):break
+            enabled=spec['loop'].get('dev_gate')
+            gate=None
+            if enabled:
+                from .development_gate import screen,capability_fact
+                gate=screen(rows,c.read(model['graph_path']),c.expand_plan(planned['development_plan'],spec),spec,model['model_id'])
+            skipped=bool(enabled and (gate['unmet'] or not model['trained']))
+            if not skipped and model['trained'] and not dispatch(out,state,spec,cfg,[dict(role='development',plan=planned['development_plan'])],options):break
             evaluated=[e['assessment'] for e in episodes(state,spec) if e['round_index']==index and e['data_role']=='dev_validation' and e['assessment']]
             acceptance=evaluate_B(evaluated,spec,'development',model_id=model['model_id'])
+            if skipped:
+                if not model['trained']:gate['unmet'].append('trained_candidate')
+                acceptance['facts'].append(capability_fact(gate,spec['active_post_condition']))
+            extra={'gate':gate,'dev_skipped':skipped} if enabled else {}
+            stop=state.get('development_stops',{}).get(str(index))
+            if stop:extra['interim_stop']=stop
             c.atomic(folder,dict(model_id=model['model_id'],plan_digest=planned['dev_plan_digest'],
-                                 attempted=bool(model['trained']),acceptance=acceptance))
+                                 attempted=bool(model['trained'] and not skipped),acceptance=acceptance,**extra))
             state['round_stage']='summarize'
         elif stage=='summarize':
             from .v5_director import adjudicate_predictions
@@ -288,7 +322,14 @@ def run_locked(out,state,spec,cfg,*,real,executor,provider,allow_agent,interacti
             if spec['acceptance'].get('lower_bound_gates'):
                 data['development_point_pass_only']=acceptance['metrics'].get('development_point_pass_only',False)
                 data['primary_intervals']=acceptance['metrics'].get('primary_intervals',{})
+            dev_receipt=c.read(directory/'dev_validate.json')
+            for key in ('dev_skipped','gate','interim_stop'):
+                if key in dev_receipt:data[key]=dev_receipt[key]
             if 'calibration_preflight' in state:data['calibration_preflight']=state['calibration_preflight']
+            if spec['loop'].get('budget_check'):
+                total=max(0,available+state['independent_reserve'])
+                reserved=min(total,state['independent_reserve'])
+                data['remaining_budget']=dict(total=total,independent_reserved=reserved,for_future_rounds=total-reserved)
             data['dispatch_attempts_cumulative']=state.get('dispatch_attempts')
             data['budget_skipped']=[t['trial_id'] for t in state['trials'] if t['request'].get('round_index')==index and t['status']=='budget_skipped']
             summarize(out,directory,state,spec,cfg,data,allow_agent,provider)
@@ -305,14 +346,14 @@ def run_locked(out,state,spec,cfg,*,real,executor,provider,allow_agent,interacti
                 if not spec['loop'].get('termination_rules') and why not in ('independent_reserve','development_passed'):why=None
                 update={'parent_rule_id':state['rule']['rule_id'],'stop_reason':why,'next_plan':None}
                 if why is None:
-                    next_plan=choose(out,state,spec,cfg,model,rows,facts,available-dev_count,allow_agent,provider,'plan')
+                    next_plan=choose(out,state,spec,cfg,model,rows,facts,exploration_allowance(available,dev_count,spec,index+1),allow_agent,provider,'plan')
                     if next_plan is None:break
                     if next_plan['rule']['parent_rule_id']!=state['rule']['rule_id']:raise ValueError('Rule ancestry mismatch')
                     update['next_plan']=next_plan
                 c.atomic(folder,update)
             if update['stop_reason']:
                 state['stop_reason']=update['stop_reason']
-                if not model['trained']:
+                if not model['trained'] or c.read(directory/'dev_validate.json').get('dev_skipped'):
                     state['phase']='inconclusive'
                     c.atomic(out/'final_report.json',dict(status='inconclusive',model_id=model['model_id'],
                              stop_reason=update['stop_reason'],independent_run=False,spent=state['spent'],

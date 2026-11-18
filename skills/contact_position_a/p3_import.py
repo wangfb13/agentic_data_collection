@@ -7,7 +7,7 @@ from bottle_scan.state_graph.round_data import episodes
 from .post import live_lift
 
 
-def snapshot(parent,state,spec,source_cfg):
+def snapshot(parent,state,spec,source_cfg,*,audit=None):
     rows=[r for r in read(parent/'seed_nodes.json') if not independent(r)]
     seen={r['node_id'] for r in rows}
     histories=[];origins=[];corrected=[]
@@ -27,7 +27,7 @@ def snapshot(parent,state,spec,source_cfg):
         cid=cond['id'];outcome=result.get('consumer_outcomes',{}).get(cid)
         terminals=[r for r in source_rows if r.get('is_terminal')]
         order=result.get('consumer_order') or []
-        if outcome and cid in order and order.index(cid)<len(terminals):
+        if isinstance(outcome,dict) and cid in order and order.index(cid)<len(terminals):
             target=terminals[order.index(cid)]
             if (outcome.get('consumer_id')==cid and outcome.get('controller')==expected['controller']
                 and outcome.get('version')==cond['consumer']['version']==expected['version']):
@@ -35,6 +35,16 @@ def snapshot(parent,state,spec,source_cfg):
                 if post['evaluated'] and not target['post'][cid]['evaluated']:
                     target['post'][cid]=post
                     corrected.append(target['node_id'])
+        if audit is not None:
+            from .consumer_audit import classify
+            conditions={c['id']:c for c in spec['post_conditions']}
+            conditions[cid]=cond
+            entries={k:classify(k,c,result,terminals) for k,c in conditions.items()}
+            audit.append(dict(trial_id=t['trial_id'],directory=t['directory'],consumers=entries))
+            for k,entry in entries.items():
+                if entry['status']=='unmatched':
+                    for node in terminals:
+                        node['post'][k]=dict(evaluated=False,success=None,evidence=[{'reason':entry['reason']}])
         role=req['data_role']
         for r in source_rows:
             if r['node_id'] in seen:raise ValueError('Duplicate source node: '+r['node_id'])

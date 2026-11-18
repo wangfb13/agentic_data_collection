@@ -61,6 +61,12 @@ def initialize(config,out,*,seed_rows=None):
     if spec.get('loop', {}).get('rounds'):
         from .rounds import initialize_rounds
         initialize_rounds(state, spec, cfg)
+    if spec.get('import',{}).get('consumer_audit') and (out/'import_receipt.json').exists():
+        warnings=read(out/'import_receipt.json').get('consumer_audit',{}).get('warnings',[])
+        state['import_warnings']=warnings
+        if warnings:
+            import warnings as notices
+            notices.warn(f'{len(warnings)} unmatched consumer outcomes; see import_receipt.json',RuntimeWarning)
     atomic(out/'state.json',state);return state
 
 
@@ -245,6 +251,9 @@ def collect_pending(out,state,spec,cfg,*,real=False,executor=None,interactive=Tr
     remaining=deque(t for t in state['trials']
                     if t['trial_id'] in ids and t['status'] not in ('complete','deferred','budget_skipped'))
     while remaining:
+        if pending.get('role')=='development' and state.get('round_stage')=='dev_validate':
+            from .development_gate import stop_pending
+            if stop_pending(out,state,spec):break
         trial=remaining.popleft()
         directory=Path(trial['directory']);result_path=directory/'result.json'
         if result_path.exists():accept_result(out,state,trial,spec);continue
@@ -311,6 +320,9 @@ def collect_pending(out,state,spec,cfg,*,real=False,executor=None,interactive=Tr
                 continue
             return
         atomic(result_path,result);accept_result(out,state,trial,spec)
+    if pending.get('role')=='development' and state.get('round_stage')=='dev_validate' and deferred_trials(state):
+        from .development_gate import stop_pending
+        stop_pending(out,state,spec)
     if deferred_trials(state):
         state['phase']='deferred_review'
         atomic(out/'state.json',state)

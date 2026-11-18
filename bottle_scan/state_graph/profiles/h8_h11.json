@@ -1,0 +1,8 @@
+{
+  "loop": {"budget_check": true, "min_rounds": 2, "exploration_per_round": 4, "dev_gate": true, "dev_min_ready": 1, "dev_min_support_fraction": 0.5},
+  "acceptance": {"futility_stop": true, "early_success_stop": false},
+  "sinks": {"cost_based_threshold": true, "false_release_cost": 8, "miss_cost": 1, "max_false_release_rate": null},
+  "facts": {"axis_balance": true},
+  "import": {"consumer_audit": true},
+  "report": {"enrichment_alpha": 0.05, "error_attributes": ["mass_class","session","placement","time_period"]}
+}

@@ -17,6 +17,12 @@ def revise(out,facts,spec,rule,state):
     def add(op,fs,**args):
         out.append({'op':op,'bindings':args,'premises_satisfied_by':[f['id'] for f in fs]})
     def remove(op):out[:]=[x for x in out if x['op']!=op]
+    if cfg.get('axis_balance'):
+        for f in get('axis_undersampled'):
+            var=f['args'][0]
+            counts=f['metrics']['counts']; minimum=f['metrics']['minimum']
+            if rule['variables'].get(var,{}).get('active',True) and any(n>=minimum and rule['variables'].get(k,{}).get('active',True) for k,n in counts.items()):
+                add('collect_transitions',[f],var=var,post_condition=cid,action_design='axis_both_signs')
     if cfg.get('per_side_no_failure'):
         remove('expand_range')
         for f in get('no_failure'):
@@ -160,10 +166,20 @@ def validate(answer,ctx):
                 for key in spec['perturbation_variables']:
                     if key in condition and any(b.get(key,settings.get(key))!=condition[key] for b in cell.get('blocks',[{}])):
                         raise ValueError('Frontier block differs from measured condition')
+    if 'target_point' in a:
+        for cell in cells:
+            if any(cell['settings'].get(k)!=v for k,v in a['target_point'].items()) or any(
+                any(block.get(k,cell['settings'].get(k))!=v for k,v in a.get('condition',{}).items()) for block in cell.get('blocks',[{}])):
+                raise ValueError('Collection must match the bound capability gap')
     if op=='collect_transitions' and 'intervals' in a:
         for k,(lo,hi) in a['intervals'].items():
             if any(not lo<=c['settings'].get(k,float('inf'))<=hi for c in cells):
                 raise ValueError('Transition start must belong to the bound cluster')
+    if a.get('action_design')=='axis_both_signs':
+        i=spec['task']['action_space']['continuous_displacement_variables'].index(a['var'])
+        moves=[x['u'] for cell in cells for x in cell['actions']]
+        if any(np.count_nonzero(u)!=1 or u[i]==0 for u in moves) or {np.sign(u[i]) for u in moves}!={-1,1}:
+            raise ValueError('Axis balance requires both signs exclusively on the bound axis')
     if a.get('action_design')=='crossed_sign_amplitude':
         axes=spec['task']['action_space']['dim']
         actions=[action['u'] for cell in cells for action in cell.get('actions',[])]

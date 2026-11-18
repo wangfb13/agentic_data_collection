@@ -22,6 +22,29 @@ def single_axis(edge, spec):
     return axis
 
 
+def balance_facts(graph, spec):
+    from .facts import fact
+    space=spec['task']['action_space']
+    by_axis=graph.get('resolution',{}).get('by_axis',{})
+    counts={}
+    evidence=[]
+    for var,name in zip(space.get('continuous_displacement_variables',[]),space.get('names',[])):
+        if not spec['perturbation_variables'].get(var,{}).get('active',True):continue
+        stats=by_axis.get(name,{})
+        if 'n_actions' in stats:
+            counts[var]=stats['n_actions']
+            evidence.extend(n for pair in stats.get('evidence',[]) for n in pair)
+        else:
+            index=space['continuous_displacement_variables'].index(var)
+            matches=[e for e in graph.get('edges',[]) if e['kind']=='observed' and single_axis(e,spec)==index]
+            counts[var]=len(matches)
+            evidence.extend(n for e in matches for n in (e['source'],e['target']))
+    minimum=spec['facts']['min_axis_trials']
+    if not any(n>=minimum for n in counts.values()):return []
+    return [fact('axis_undersampled',[var],sorted(set(evidence)),dict(counts=counts,minimum=minimum))
+            for var,n in counts.items() if n<minimum]
+
+
 def axis_observable(rows, observed, D, spec, axis):
     index = {r['node_id']: i for i,r in enumerate(rows)}
     moves = [e for e in observed if single_axis(e,spec)==axis and
