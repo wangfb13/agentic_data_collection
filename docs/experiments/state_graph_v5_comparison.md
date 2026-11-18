@@ -1,4 +1,4 @@
-# 状态图 v4 与 v5 的历史对照
+# 状态图 v4、v5 与 v5-H 的历史对照
 
 数据来自 `outputs/state_graph/v4_implementation_20261113/historical_rebuild/nodes.jsonl`。按试次组做 5 折交叉验证，同一试次的所有窗口只进入一折。每一折用训练组重新估计噪声、尺度和 Ready 邻域。
 
@@ -8,36 +8,66 @@
 |---|---|---:|---:|---:|---:|---:|---:|---:|
 | white_bottle | v4 | 3 | 0 | 0 | 48 | 2 | 0 | 11 / 23 |
 | white_bottle | v5 | 0 | 0 | 0 | 51 | 0 | 0 | 11 / 23 |
+| white_bottle | v5-H | 8 | 0 | 0 | 43 | 2 | 0 | 11 / 23 |
 | green_bottle | v4 | 358 | 28 | 0 | 3 | 234 | 3 | 235 / 252 |
 | green_bottle | v5 | 0 | 0 | 0 | 389 | 42 | 2 | 235 / 252 |
+| green_bottle | v5-H | 237 | 71 | 0 | 81 | 201 | 3 | 235 / 252 |
 
 ### white_bottle · v4
 
 共 51 个窗口、50 个试次组。簇符号分布为 `{'Stochastic': 2, 'Unknown': 1, 'Unsupported': 11}`。可恢复标签来源为 `{}`。
 
-有效半径为 `v4，统一 D ≤ 1`。该次实际解析的全部开关和数值保存在 `outputs/state_graph/v5_history_comparison/white_bottle/v4/spec.json`，节点、标签及逐样本留出预测位于同目录。
+有效半径为 `v4，统一 D ≤ 1`。该次实际解析的全部开关和数值保存在 `outputs/state_graph/v5_history_comparison_H/white_bottle/v4/spec.json`，节点、标签及逐样本留出预测位于同目录。
 
 ### white_bottle · v5
 
 共 51 个窗口、50 个试次组。簇符号分布为 `{'Stochastic': 2, 'Unsupported': 10}`。可恢复标签来源为 `{}`。
 
-有效半径为 `{'similar_radius': 1.0, 'ready_radius': 1.0, 'radius': 1.0, 'support_distance': 1.0, 'endpoint_radius': 1.0}`。该次实际解析的全部开关和数值保存在 `outputs/state_graph/v5_history_comparison/white_bottle/v5/spec.json`，节点、标签及逐样本留出预测位于同目录。
+有效半径为 `{'similar_radius': 1.0, 'ready_radius': 1.0, 'radius': 1.0, 'support_distance': 1.0, 'endpoint_radius': 1.0}`。该次实际解析的全部开关和数值保存在 `outputs/state_graph/v5_history_comparison_H/white_bottle/v5/spec.json`，节点、标签及逐样本留出预测位于同目录。
+
+### white_bottle · v5-H
+
+共 51 个窗口、50 个试次组。簇符号分布为 `{'Ready': 1, 'Stochastic': 2, 'Unknown': 2, 'Unsupported': 7}`。可恢复标签来源为 `{}`。
+
+有效半径为 `{'similar_radius': 1.0, 'ready_radius': 1.0, 'radius': 1.0, 'support_distance': 1.0, 'endpoint_radius': 1.0}`。该次实际解析的全部开关和数值保存在 `outputs/state_graph/v5_history_comparison_H/white_bottle/v5-H/spec.json`，节点、标签及逐样本留出预测位于同目录。
+
+核带宽 0.5，后验下界门槛 0.3，校准试次组 23。
+
+逐轴尺度与可观测判定 `{"delta_a_mm": {"observable": null, "scale": null, "used": false, "reason": "insufficient_actions_or_repeats", "action_median": null, "repeat_median": 0.5255486631641448, "n_actions": 0, "n_repeat_pairs": 28}}`。
+
+度量头逐轴结果 `None`。历史对照采用已有特征。
+
+白瓶 Ready 节点 8 个。带宽和下界均由训练组终端证据选取，未取得可用门槛时所有节点拒绝放行。
 
 ### green_bottle · v4
 
 共 389 个窗口、275 个试次组。簇符号分布为 `{'NeedAction': 12, 'Ready': 29, 'Unknown': 1}`。可恢复标签来源为 `{'observed': 15, 'uses_inferred': 13}`。
 
-有效半径为 `v4，统一 D ≤ 1`。该次实际解析的全部开关和数值保存在 `outputs/state_graph/v5_history_comparison/green_bottle/v4/spec.json`，节点、标签及逐样本留出预测位于同目录。
+有效半径为 `v4，统一 D ≤ 1`。该次实际解析的全部开关和数值保存在 `outputs/state_graph/v5_history_comparison_H/green_bottle/v4/spec.json`，节点、标签及逐样本留出预测位于同目录。
 
 ### green_bottle · v5
 
 共 389 个窗口、275 个试次组。簇符号分布为 `{'Stochastic': 1, 'Unsupported': 242}`。可恢复标签来源为 `{}`。
 
-有效半径为 `{'similar_radius': 0.32805376136662534, 'ready_radius': 0.32805376136662534, 'radius': 0.3936645136399504, 'support_distance': 0.3936645136399504, 'endpoint_radius': 0.32805376136662534}`。该次实际解析的全部开关和数值保存在 `outputs/state_graph/v5_history_comparison/green_bottle/v5/spec.json`，节点、标签及逐样本留出预测位于同目录。
+有效半径为 `{'similar_radius': 0.32805376136662534, 'ready_radius': 0.32805376136662534, 'radius': 0.3936645136399504, 'support_distance': 0.3936645136399504, 'endpoint_radius': 0.32805376136662534}`。该次实际解析的全部开关和数值保存在 `outputs/state_graph/v5_history_comparison_H/green_bottle/v5/spec.json`，节点、标签及逐样本留出预测位于同目录。
+
+### green_bottle · v5-H
+
+共 389 个窗口、275 个试次组。簇符号分布为 `{'NeedAction': 52, 'Ready': 130, 'Unknown': 2, 'Unsupported': 59}`。可恢复标签来源为 `{'borrowed': 14, 'observed': 57}`。
+
+有效半径为 `{'similar_radius': 0.32805376136662534, 'ready_radius': 0.32805376136662534, 'radius': 0.3936645136399504, 'support_distance': 0.3936645136399504, 'endpoint_radius': 0.32805376136662534}`。该次实际解析的全部开关和数值保存在 `outputs/state_graph/v5_history_comparison_H/green_bottle/v5-H/spec.json`，节点、标签及逐样本留出预测位于同目录。
+
+核带宽 0.5，后验下界门槛 0.8，校准试次组 252。
+
+逐轴尺度与可观测判定 `{"delta_a_mm": {"observable": true, "scale": 0.6561075227332507, "used": true, "reason": null, "action_median": 1.362756329754608, "repeat_median": 0.5053516051327561, "n_actions": 114, "n_repeat_pairs": 219}}`。
+
+度量头逐轴结果 `None`。历史对照采用已有特征。
+
+按预设容差 10%，留出放行验收 `{'correct_release_min': 210.6, 'error_release_max': 3, 'passed': False}`。
 
 ## 证据范围
 
-两版输入均沿用历史窗口实际保存的触觉几何、力与腕图特征。历史表没有指面毫米标定、逐图块读出、同一试次配对的双下游结果或新导演的事前预测，因此这些功能只做合成验证，历史 McNemar 和预测准确率均不可估计。v4 的来源从标签的实际路径回查。uses_inferred 表示路径包含模型推断，observed 表示整条路径仅含实测转移。
+三版输入均沿用历史窗口实际保存的触觉几何、力与腕图特征。历史表没有指面毫米标定、逐图块读出、同一试次配对的双下游结果或新导演的事前预测，因此这些功能只做合成验证，历史 McNemar 和预测准确率均不可估计。v4 的来源从标签的实际路径回查。uses_inferred 表示路径包含模型推断，observed 表示整条路径仅含实测转移。
 
 ## 复现
 
@@ -260,6 +290,71 @@
       "min_valid_bootstrap_fraction": 0.9,
       "matched_position_tolerance_mm": 1.0
     }
+  }
+}
+```
+
+**h_revision**
+
+```json
+{
+  "sinks": {
+    "kernel_ready": true,
+    "ready_kernel": "gaussian",
+    "ready_bandwidths": [
+      0.25,
+      0.5,
+      1,
+      2
+    ],
+    "ready_thresholds": [
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9
+    ],
+    "max_false_release_rate": 0.15
+  },
+  "graph": {
+    "observable_axes_only": true,
+    "observable_ratio": 1.5,
+    "axis_residual_mm": 1.0,
+    "axis_residual_fraction": 0.15
+  },
+  "geometry": {
+    "automatic_reference_check": true,
+    "verification_pose_tolerance_mm": 2.0
+  },
+  "observation": {
+    "metric_per_axis": true,
+    "metric": {
+      "max_error_by_axis_mm": {
+        "r": 1.5,
+        "h": 1.5
+      },
+      "min_axis_motion_mm": 0.25,
+      "min_relative_gain": 0.05
+    }
+  },
+  "facts": {
+    "rate_based_frontier": true,
+    "frontier_success_target": 0.8,
+    "frontier_min_trials": 5,
+    "physical_failure_fraction": 0.9
+  },
+  "acceptance": {
+    "lower_bound_gates": true,
+    "primary_rates": [
+      "recovery_success_rate"
+    ],
+    "rate_confidence": 0.95,
+    "p3_validation_repetitions": 2
+  },
+  "report": {
+    "green_correct_release_relative_tolerance": 0.1
   }
 }
 ```

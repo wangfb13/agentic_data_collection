@@ -69,7 +69,7 @@ def entry(opts):
     elif opts.retry_deferred:
         print(campaign.release_deferred(out,opts.retry_deferred))
     else:
-        state=campaign.run(out,real=opts.real and not opts.preview_plan,allow_agent=opts.allow_agent,
+        state=campaign.run(out,allow_degraded=getattr(opts,'allow_degraded',False),real=opts.real and not opts.preview_plan,allow_agent=opts.allow_agent,
                            on_interruption=campaign_ah.offer_defer)
         print({k:state.get(k) for k in ('phase','spent','pending')})
     return 0

@@ -28,6 +28,9 @@ def validation_plan(cfg, spec, role):
 def initialize_rounds(state, spec, cfg):
     independent=validation_plan(cfg,spec,'independent')
     reserve=len(c.expand_plan(independent,spec))
+    if spec['acceptance'].get('lower_bound_gates'):
+        from .rate_gates import check_plan
+        check_plan(independent,reserve,spec['acceptance'])
     if reserve>min(spec['budget']['max_new_trials'],spec['budget'].get('max_dispatch_attempts',spec['budget']['max_new_trials'])):raise ValueError('Independent reservation exceeds the campaign budget')
     rule=state['rule']; variables=rule['variables']
     axes={k:kdef for k,kdef in variables.items() if 'range' in kdef}
@@ -165,13 +168,24 @@ def stop_reason(state,spec,facts,current,passed,next_cost):
         if cell not in policy or cell not in expert:return False
         a,b=policy[cell]['metrics'],expert[cell]['metrics']
         if not a.get('directional_evaluated_trials') or not b.get('directional_evaluated_trials'):return False
-        x,y=a.get('farthest_observed_success'),b.get('farthest_observed_success')
+        if spec.get('facts',{}).get('rate_based_frontier'):
+            from .frontier_rates import overlap
+            x,y=a.get('verified_edge_mm'),b.get('verified_edge_mm')
+            if x is None or y is None or not overlap(a,b):return False
+        else:x,y=a.get('farthest_observed_success'),b.get('farthest_observed_success')
         resolution=b.get('resolution_mm',spec['facts'].get('boundary_resolution_mm'))
         return all(isinstance(i,(float,int)) for i in (x,y,resolution)) and abs(x-y)<=resolution
     conditions={k[2] for k in set(policy)|set(expert)}
     if ends and conditions and all(matches((*end,cid)) for end in ends for cid in conditions):return 'frontiers_converged'
     failures=[e for e in current if e['status']=='failed' or (e['target_consumer'] in e['terminal_outcomes'] and not e['terminal_outcomes'][e['target_consumer']]['success'])]
-    if failures and all(e['failure_cause'] in ('contact_lost','edge_contact') for e in failures):return 'remaining_observed_failures_physical'
+    if spec.get('facts',{}).get('rate_based_frontier'):
+        nearby={}
+        for cell,f in policy.items():
+            if cell[:2] in ends:nearby.update(f['metrics'].get('adjacent_failures',{}))
+        cfg=spec['facts']
+        if len(nearby)>=cfg['frontier_min_trials'] and sum(c in ('contact_lost','edge_contact','contact_edge') for c in nearby.values())/len(nearby)>=cfg['physical_failure_fraction']:
+            return 'remaining_observed_failures_physical'
+    elif failures and all(e['failure_cause'] in ('contact_lost','edge_contact') for e in failures):return 'remaining_observed_failures_physical'
     if remaining_exploration(state,spec)<next_cost:return 'independent_reserve'
     return None
 
@@ -212,7 +226,7 @@ def run_locked(out,state,spec,cfg,*,real,executor,provider,allow_agent,interacti
         if spec.get('consumer',{}).get('target_from_rule'):
             spec['active_post_condition']=state['rule']['target_consumer']
         folder=directory/(stage+'.json')
-        records=list(episodes(state,spec))
+        records=(c.read(out/'seed_episodes.json') if (out/'seed_episodes.json').exists() else [])+list(episodes(state,spec))
         rows=training_rows(c.all_rows(out,state),spec,index)
         devplan=validation_plan(cfg,spec,'development')
         dev_count=len(c.expand_plan(devplan,spec))
@@ -270,6 +284,11 @@ def run_locked(out,state,spec,cfg,*,real,executor,provider,allow_agent,interacti
             c.atomic(out/'hypotheses.json',archive)
             previous=c.read(out/'rounds'/f'round_{index-1:04d}'/'round_report.json') if index>1 else None
             data=report(records,c.read(model['graph_path']),facts,decisions,spec,index,previous)
+            acceptance=c.read(directory/'dev_validate.json')['acceptance']
+            if spec['acceptance'].get('lower_bound_gates'):
+                data['development_point_pass_only']=acceptance['metrics'].get('development_point_pass_only',False)
+                data['primary_intervals']=acceptance['metrics'].get('primary_intervals',{})
+            if 'calibration_preflight' in state:data['calibration_preflight']=state['calibration_preflight']
             data['dispatch_attempts_cumulative']=state.get('dispatch_attempts')
             data['budget_skipped']=[t['trial_id'] for t in state['trials'] if t['request'].get('round_index')==index and t['status']=='budget_skipped']
             summarize(out,directory,state,spec,cfg,data,allow_agent,provider)

@@ -51,7 +51,14 @@ def records(episodes,spec,cid):
 def episode_frontiers(episodes,spec,cid,*,rows=(),model_id=None):
     if not spec.get('facts',{}).get('capability_predicates'):return []
     grouped=defaultdict(list);conditions={};unlocated_failures=defaultdict(set)
+    episodes=list(episodes)
+    group_for={e.get('attempt_id') or e.get('trial_id'):e.get('group_id') or e.get('attempt_id') or e.get('trial_id') for e in episodes}
+    cumulative=defaultdict(dict)
     for ident,role,coords,success,cause,condition,version in records(episodes,spec,cid):
+        if success is False:
+            for var,x in coords.items():
+                for side,sign in [('positive',1),('negative',-1)]:
+                    if sign*x>=0:cumulative[json.dumps(condition,sort_keys=True),var,side][ident]=(x,cause)
         if model_id is not None and role=='policy' and version!=model_id:continue
         k=json.dumps(condition,sort_keys=True)
         conditions[k]=condition
@@ -75,6 +82,7 @@ def episode_frontiers(episodes,spec,cid,*,rows=(),model_id=None):
                 versions={t[4] for t in grouped if t[:4]==(key,var,side,'policy')} or {model_id}
                 for version in sorted(versions,key=str):
                     limits={};tested={};evidence=[];all_failed=[];actual=[]
+                    stats_by_role={}
                     for role,name in PRED.items():
                         cell=grouped[key,var,side,role,version if role=='policy' else None]
                         xs=[r[1] for r in cell if r[2] is True]
@@ -95,14 +103,30 @@ def episode_frontiers(episodes,spec,cid,*,rows=(),model_id=None):
                                  'ci_method':'episode bootstrap of observed successes; conditional on a bootstrap success',
                                  'trials':len(cell),'evaluated_trials':len(observed),'n_success':len(xs),'directional_evaluated_trials':tested[role],'model_id':version,
                                  'observed_points':[{'x':r[1],'success':r[2],'failure_cause':r[3],'trial_id':r[0]} for r in cell]}
+                        if cfg.get('rate_based_frontier'):
+                            from .frontier_rates import statistics
+                            stats=statistics([(group_for[i],x,ok,cause) for i,x,ok,cause in observed],sign,stop,abs(envelope),cfg)
+                            metrics.update(stats);limits[role]=stats['verified_edge_mm'];stats_by_role[role]=stats
+                            if role=='policy':
+                                k=stats['boundary_bin']
+                                stats['adjacent_failures']={i:c for i,(x,c) in cumulative[key,var,side].items() if k is not None and max(0,int(np.ceil(abs(x)/stop))-1) in (k,k+1)}
+                                metrics['adjacent_failures']=stats['adjacent_failures']
                         facts.append(_fact(name,[var,side,cid],[r[0] for r in cell],metrics))
                     expert,policy=limits['expert'],limits['policy']
                     physical=var not in unlocated_failures[key] and bool(all_failed) and all(c in ('contact_lost','edge_contact','contact_edge') for c in all_failed)
                     gap=sign*(expert-policy) if None not in (expert,policy) else None
+                    if cfg.get('rate_based_frontier'):common['boundary_definition']='connected_wilson_bins'
                     if gap is not None and gap>stop:
                         facts.append(_fact('frontier_gap',[var,side,cid],evidence,
                                  {**common,'model_id':version,'interval':sorted([expert,policy]),'length_mm':gap}))
-                    if physical or (gap is not None and abs(gap)<=stop and tested['expert'] and tested['policy']):
+                    converged=gap is not None and abs(gap)<=stop and tested['expert'] and tested['policy']
+                    if cfg.get('rate_based_frontier'):
+                        from .frontier_rates import overlap
+                        converged=converged and overlap(stats_by_role['policy'],stats_by_role['expert'])
+                        near=stats_by_role['policy']['adjacent_failures']
+                        physical=len(near)>=cfg['frontier_min_trials'] and sum(c in ('contact_lost','edge_contact','contact_edge') for c in near.values())/len(near)>=cfg['physical_failure_fraction']
+                        common['boundary_failures']=near
+                    if physical or converged:
                         facts.append(_fact('frontier_direction_closed',[var,side,cid],evidence,
                                   {**common,'reason':'physical_failures_observed' if physical else 'within_resolution','model_id':version}))
     # Conditions and policy versions are separate predicates even for an as-yet unsampled cell.

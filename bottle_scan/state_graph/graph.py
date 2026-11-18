@@ -98,7 +98,7 @@ def build_graph(rows,noise,spec,dynamics=None):
         from .v5_values import resolution
         from .noise import metric_distance_mm
         M=metric_distance_mm(rows,noise) if rows and 'tac_metric' in noise['active_modalities'] else None
-        scale,radius=resolution(rows,observed,D,spec,M)
+        scale,radius=resolution(rows,observed,D,spec,M,metric_axes=[('r','h').index(x) for x in noise['tac_metric']['axes']] if M is not None and spec['observation'].get('metric_per_axis') else None)
         if noise.get('metric_normalized_per_mm'):
             scale['physical_radius_mm']={k:v/noise['metric_normalized_per_mm'] for k,v in radius.items()}
     neighbors=[]
@@ -113,7 +113,8 @@ def build_graph(rows,noise,spec,dynamics=None):
     if dynamics and dynamics.get('status')=='trained':
         from .dynamics import inferred_edges
         inferred=inferred_edges(rows,dynamics,noise,spec,observed,endpoint_radius=radius.get('endpoint_radius',1.));edges.extend(inferred)
-    probabilities,sinks=estimate_sinks(rows,D,spec,**({'ready_radius':radius['ready_radius']} if radius else {}));edges.extend(sinks)
+    calibrations={}
+    probabilities,sinks=estimate_sinks(rows,D,spec,**({'calibrations':calibrations} if spec.get('sinks',{}).get('kernel_ready') else {}),**({'ready_radius':radius['ready_radius']} if radius else {}));edges.extend(sinks)
     for e in edges:e['edge_id']='e_'+digest([e['kind'],e['source'],e['target'],e.get('action'),e.get('u'),e.get('post_condition')])[:20]
     action_edges=[e for e in edges if e['kind'] in ('observed','inferred','sink') and e.get('executable',True)]
     include_inferred=spec.get('labels',{}).get('include_inferred',True)
@@ -126,6 +127,7 @@ def build_graph(rows,noise,spec,dynamics=None):
             'counts':{kind:sum(e['kind']==kind for e in edges) for kind in ('observed','inferred','similar','sink')}}
     if spec.get('graph_schema')=='state_graph_v5':result['schema']='state_graph_v5'
     if 'include_inferred' in spec.get('labels',{}):result['label_inferred']=include_inferred
+    if calibrations:result['ready_calibration']=calibrations
     if scale is not None:result.update(resolution=scale,radii=radius)
     if spec.get('graph',{}).get('success_value'):
         from .v5_values import solve

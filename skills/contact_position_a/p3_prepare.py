@@ -11,7 +11,7 @@ from . import campaign_ah
 from .ah_geometry import basis,coord_names,measured,position_allowed,position_limits
 
 
-def prepare_position(folder,reference_pose,start_u,hw,spec,invoke,*,station_z_bounds=None):
+def prepare_position(folder,reference_pose,start_u,hw,spec,invoke,*,station_z_bounds=None,return_to_witness=False):
     folder=Path(folder)
     requested=np.asarray(start_u,dtype=float)
     if not position_allowed(requested,spec):raise ValueError('Requested preparation outside declared envelope')
@@ -23,7 +23,7 @@ def prepare_position(folder,reference_pose,start_u,hw,spec,invoke,*,station_z_bo
     path=folder/'preparation.json'
     # A direct baseline starts from the operator's current contact approach.
     # Neither a cached pose nor a requested zero is measured coordinate truth.
-    if not np.any(requested):
+    if not return_to_witness and not np.any(requested):
         report.update(mode='current_pose_no_preparation_motion',actual_initial_coordinates=None,
                       note='Requested zero means no preparation motion. Contact coordinates are measured separately, or missing.')
         atomic(path,report)

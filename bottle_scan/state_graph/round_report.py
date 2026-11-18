@@ -85,6 +85,12 @@ def report(episodes, graph, facts, predictions, spec, index, previous=None):
             'regions':counts,'frontiers':frontier,'development':dev,'failure_causes':dict(failures),
             'predictions':predictions,'prediction_accuracy':status['confirmed']/denom if denom else None,
             'prediction_denominator':denom,'paired_consumers':paired_report(current,graph,spec)}
+    if spec.get('geometry',{}).get('automatic_reference_check'):
+        checks=[e['reference_check'] for e in current if e.get('reference_check')]
+        located=sum(bool(e.get('initial_coords')) for e in current)
+        data['placement_continuity']=dict(attempts=len(current),located=located,coordinate_fraction=located/len(current) if current else None,
+                checks=len(checks),pass_rate=sum(c['passed'] for c in checks)/len(checks) if checks else None,
+                rewitnessed_after_failure=sum(not c['passed'] and c.get('rewitnessed',False) for c in checks))
     if previous:
         changes={}
         for field in ('regions','frontiers','development','failure_causes','prediction_accuracy','paired_consumers'):

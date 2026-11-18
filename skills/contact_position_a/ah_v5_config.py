@@ -18,7 +18,8 @@ def configure(spec, cfg=None):
         cfg['execution'].pop('sampling_preference',None)
         cfg['execution'].pop('phase',None)
     observation=spec.get('observation',{})
-    if observation.get('tac_version')=='calibrated_rh' and not observation.get('tac_calibration'):
+    from bottle_scan.state_graph.calibrations import missing
+    if observation.get('tac_version')=='calibrated_rh' and 'observation.tac_calibration' in missing(spec):
         observation.update(tac_version='legacy_pixel',tac_version_requested='calibrated_rh',
                            tac_calibration_status='unavailable: finger-plane metric calibration absent')
     if observation.get('tac_version')=='calibrated_rh' and 'tac' in observation.get('modalities',{}):

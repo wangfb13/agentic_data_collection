@@ -27,6 +27,14 @@ def evaluate_B(records,spec,role,condition=None,model_id=None):
         elif key.startswith('max_'):
             name=key[4:];checks[key]=metrics.get(name) is not None and metrics[name]<=value
     if spec['acceptance'].get('requires_ready_and_need_action_coverage'):checks['both_initial_states']=bool(normal and needs)
+    if spec['acceptance'].get('lower_bound_gates'):
+        from .rate_gates import bounds
+        point_pass=bool(checks) and all(checks.values())
+        intervals=bounds(chosen,spec['acceptance'])
+        for name,interval in intervals.items():
+            checks['wilson_min_'+name]=bool(interval['wilson'] and interval['wilson'][0]>=config['min_'+name])
+        metrics['primary_intervals']=intervals
+        if role=='development':metrics['development_point_pass_only']=point_pass and not all(checks.values())
     passed=bool(checks) and all(checks.values());predicate='indep_B_pass' if role=='independent' else 'dev_B_pass'
     facts=[fact(predicate,[condition],[r['group_id'] for r in chosen],metrics)] if passed else []
     if chosen and not passed:

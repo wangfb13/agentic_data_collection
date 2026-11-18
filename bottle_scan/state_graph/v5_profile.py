@@ -16,7 +16,7 @@ def merge(base,changes):
     return result
 
 
-def configure(spec,overrides=None,*,version=5):
+def configure(spec,overrides=None,*,version=5,revision_h=True):
     if version==4:
         if spec.get('graph_schema')=='state_graph_v5':
             raise ValueError('Select the original v4 spec for an exact legacy replay')
@@ -25,11 +25,15 @@ def configure(spec,overrides=None,*,version=5):
         raise ValueError('Unknown graph version')
     defaults={}
     for path in sorted(PROFILES.glob('*.json')):
+        if path.name=='h_revision.json' and not revision_h:continue
         defaults=merge(defaults,json.loads(path.read_text()))
     configured=(merge(defaults,spec) if spec.get('graph_schema')=='state_graph_v5' else merge(spec,defaults))
     configured['graph_schema']='state_graph_v5'
     from .v5_facts import configure as configure_facts
     result=merge(configured,overrides or {})
+    if (overrides or {}).get('observation',{}).get('tac_version')=='legacy_pixel':
+        result['observation'].pop('tac_version_requested',None)
+        result['observation'].pop('tac_calibration_status',None)
     configure_facts(result)
     return result
 

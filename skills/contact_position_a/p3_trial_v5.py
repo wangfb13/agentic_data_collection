@@ -117,6 +117,8 @@ def run_trial(request,directory,spec,cfg,io,*,sources=None):
     tags=dict(data_role=request.get('data_role'),round_index=request.get('round_index'),controller_role=ctl,
               target_consumer=target,expert_source=expert if ctl=='expert' else None)
     io.confirm(request)
+    if spec.get('geometry',{}).get('automatic_reference_check') and hasattr(io,'prepare'):
+        io.reference_bundle=bundle
     if hasattr(io,'prepare'):io.prepare(request)
     maximum=spec['runtime']['max_steps']
     declared_exit=False
@@ -250,7 +252,7 @@ def run_trial(request,directory,spec,cfg,io,*,sources=None):
                 attempt_reason=reason,failure_cause=reason,initial_coords=first.get('plan_coords',{}),
                 initial_coordinate_evidence=first.get('provenance',{}),consumer_order=order,
                 consumer_seed=request.get('consumer_seed'),paired=pair['paired'],pairing=pair,
-                terminal_outcomes=posts,consumer_outcomes=outcomes,consumer_outcome=outcomes.get(target),
+                terminal_outcomes=posts,consumer_outcomes=outcomes,**({'reference_check':getattr(io,'reference_check',None)} if spec.get('geometry',{}).get('automatic_reference_check') else {}),consumer_outcome=outcomes.get(target),
                 preparation=getattr(io,'preparation_report',None),
                 action_commands=actions,move_receipts=list(map(str,receipts)),cost={'actions':len(receipts),'probe_refreshes':getattr(io,'probe_refresh_count',0),'wall_seconds':time.monotonic()-start},**tags)
     campaign.atomic(directory/'completed_capture.json',result)

@@ -63,7 +63,7 @@ def setup_round(tmp_path):
     raw['budget'].update(max_new_trials=26,max_batch_trials=8)
     for role in ('development','independent'):
         raw['acceptance'][role+'_B']={'min_trials':2,'min_verified_recoveries':2}
-    spec=configure(raw,{'director':{'mode':'fixed_priority'},'observation':{'auto_select':False},
+    spec=configure(raw,{'acceptance':{'lower_bound_gates':False},'director':{'mode':'fixed_priority'},'observation':{'auto_select':False},
                          'consumer':{'dual_paired':False}})
     path=tmp_path/'instance_v5.json';c.atomic(path,spec)
     vplan={'cluster_classes':['Ready','NeedAction'],'cells':[{'settings':{'x':0,'y':0},'reps':2,'actions':[]}]}

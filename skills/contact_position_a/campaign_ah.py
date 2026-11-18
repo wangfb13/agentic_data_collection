@@ -493,6 +493,7 @@ def main(argv=None):
                       help='每次独立从当前位置轻触；组名仅用于续跑，默认沿用 P3')
     mode.add_argument('--fixed-p2',action='store_true',help='复现原固定 P2 对照实验')
     task=p.add_mutually_exclusive_group()
+    p.add_argument('--allow-degraded',action='store_true')
     task.add_argument('--real',action='store_true')
     task.add_argument('--preview-plan',action='store_true',help='从已结算证据离线预览下一批，保留现场队列')
     task.add_argument('--list-deferred',action='store_true',help='只读列出本批暂缓试次及证据目录')
@@ -530,7 +531,7 @@ def main(argv=None):
     else:
         opts.out=opts.out or DEFAULT_OUT
         initialize(opts.out)
-    state=campaign.run(opts.out,real=opts.real,allow_agent=opts.allow_agent,
+    state=campaign.run(opts.out,allow_degraded=opts.allow_degraded,real=opts.real,allow_agent=opts.allow_agent,
                        on_interruption=offer_defer if opts.real else None)
     if state['phase']=='deferred_review':
         show_deferred(state)

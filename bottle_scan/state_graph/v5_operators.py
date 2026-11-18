@@ -94,6 +94,9 @@ def revise(out,facts,spec,rule,state):
 
 
 def next_probe(metrics,spec,var,side):
+    if spec.get('facts',{}).get('rate_based_frontier') and 'bins' in metrics:
+        from .frontier_rates import next_bin
+        return next_bin(metrics,spec,var,side)
     sign=1 if side=='positive' else -1
     limit=abs(spec['perturbation_variables'][var]['envelope'][1 if sign>0 else 0])
     resolution=metrics['resolution_mm'];points=metrics.get('observed_points',[])

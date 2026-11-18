@@ -54,7 +54,7 @@ def tag_result(result, request):
 
 def training_rows(rows, spec, round_index):
     loop=spec.get('loop',{})
-    return [r for r in rows if not independent(r) and
+    return [r for r in rows if not independent(r) and not r.get('source_dev_evaluation_open') and
             (r.get('data_role')!='dev_validation' or
              (loop.get('dev_to_train',False) and r['round_index']<round_index)) and
             (r.get('data_role')!='frontier_expert' or
@@ -88,7 +88,7 @@ def episodes(state, spec, *, include_independent=False):
         target=req['post_condition']
         classification=result.get('failure_cause') or terminal.get(target,{}).get('reason') or result.get('attempt_reason')
         yield dict(trial_id=req['trial_id'],group_id=req['trial_id'], round_index=req.get('round_index'),
-                   first_contact=first,role=role,controller_role=role,data_role=req.get('data_role'),
+                   reference_check=result.get('reference_check'),first_contact=first,role=role,controller_role=role,data_role=req.get('data_role'),
                    model_id=req.get('model_id'),target_consumer=target, mass=req['block'].get('mass_class'),
                    condition=req['block'],initial_coords=coords,coordinate_source='measured' if coords else None,
                    initial_coordinate_evidence=result.get('initial_coordinate_evidence') or (first or {}).get('provenance'), terminal_outcomes=terminal,

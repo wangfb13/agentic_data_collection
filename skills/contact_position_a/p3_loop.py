@@ -35,17 +35,27 @@ def initialize(parent, out, *, extra_trials=60, consumer=None, version=4, overri
                 raise ValueError('Continuation directory belongs to another experiment')
             return
         from .ah_transition_v5 import read_source
-        with (read_source(parent) if version==5 else campaign.ownership(parent)):
+        from contextlib import nullcontext
+        v5_parent=version==5 and (parent/'v5_output.json').is_file()
+        seed_episodes=[];repairs=[]
+        # state.json is atomically published. Only immutable, completed trial IDs
+        # from this snapshot are imported, including when the source has pending work.
+        with (nullcontext() if v5_parent else read_source(parent) if version==5 else campaign.ownership(parent)):
             state = campaign.read(parent/'state.json')
             spec = campaign.read(parent/'spec.json')
             cfg = campaign.read(parent/'config.json')
-            if spec.get('current_placement') != 'P3' or state['pending'] or any(
-                    t['status'] not in ('complete','superseded') for t in state['trials']):
+            if spec.get('current_placement') != 'P3' or (not v5_parent and (state['pending'] or any(
+                    t['status'] not in ('complete','superseded') for t in state['trials']))):
                 raise ValueError('Source P3 has unsettled trials or another start mode')
-            rows = [r for r in campaign.all_rows(parent,state) if not independent(r)]
-            origins = [{k:t[k] for k in ('trial_id','directory','outcome_status')} for t in state['trials'] if t['status']=='complete']
+            if v5_parent:
+                from .p3_import import snapshot
+                rows,origins,seed_episodes,repairs=snapshot(parent,state,spec,cfg)
+            else:
+                rows = [r for r in campaign.all_rows(parent,state) if not independent(r)]
+                origins = [{k:t[k] for k in ('trial_id','directory','outcome_status')} for t in state['trials'] if t['status']=='complete']
         path = campaign.read('config.state_graph.campaign_v4.json')['execution']['environment']['RIGHT_FORCE_POLICY_PATH']
-        physics = consumer or p3_force.identity(path)
+        physics = consumer or (cfg['consumer'] if v5_parent else p3_force.identity(path))
+        if v5_parent and physics!=cfg['consumer']:raise ValueError('Source results require the same verified consumer identity')
         condition = next(c for c in spec['post_conditions'] if c['id'] == spec['active_post_condition'])
         condition['consumer'].update(version=physics['version'])
         condition['consumer']['params'].update(lift_mm=40, hold_s=2)
@@ -73,6 +83,9 @@ def initialize(parent, out, *, extra_trials=60, consumer=None, version=4, overri
             from bottle_scan.state_graph.skill_interface import task_id
             spec=configure(spec,overrides)
             ah_v5_config.configure(spec,cfg)
+            if spec.get('sinks',{}).get('kernel_ready'):
+                for c in spec['post_conditions']:
+                    if c['id']=='forcepolicy_lift':c['consumer']['controller']=physics['controller']
             if ranking_report:
                 ranking=campaign.read(ranking_report)
                 permitted={r['node_id'] for r in rows}
@@ -86,8 +99,17 @@ def initialize(parent, out, *, extra_trials=60, consumer=None, version=4, overri
                 validation=campaign.read(Path(__file__).with_name('rh_validation_plan.json'))
                 for cell in validation['cells']:
                     validate_cell(cell,spec,'validate_B',{})
+                if spec['acceptance'].get('lower_bound_gates'):
+                    from collections import Counter
+                    denominator=Counter()
+                    for cell in validation['cells']:
+                        cell['reps']*=spec['acceptance']['p3_validation_repetitions']
+                        stratum='Ready' if not any(cell['settings'].values()) else 'NeedAction'
+                        cell['expected_initial_class']=stratum
+                        denominator[stratum]+=cell['reps']*len(cell['blocks'])
+                    validation['planned_denominators']=dict(denominator)
                 cfg.update(development_plan=validation,independent_plan=validation)
-            rows=[ah_geometry.convert_legacy_row(row,spec) for row in rows]
+            if not v5_parent:rows=[ah_geometry.convert_legacy_row(row,spec) for row in rows]
             # A seed has no new consumer outcome until it has actually been evaluated.
             for row in rows:
                 row['task_id']=task_id(spec)
@@ -95,6 +117,9 @@ def initialize(parent, out, *, extra_trials=60, consumer=None, version=4, overri
                     row.setdefault('post',{}).setdefault(post['id'],dict(evaluated=False,success=None,evidence=[]))
         else:
             cfg['execution']['sampling_preference']['instruction'] += cfg['execution']['phase']
+        if v5_parent:
+            campaign.atomic(out/'seed_episodes.json',seed_episodes)
+            campaign.atomic(out/'import_receipt.json',dict(source=str(parent),state_digest=campaign.digest(state),source_phase=state['phase'],completed_trials=len(origins),restored_forcepolicy_nodes=repairs))
         campaign.atomic(out/'continuation.json',dict(protocol=PROTOCOL,source=str(parent),
                       trials=origins,source_spent=state['spent'],seed_nodes=len(rows),
                       source_state_digest=campaign.digest(state),new_budget=extra_trials,**({'graph_overrides':overrides or {}} if version==5 else {})))
@@ -181,10 +206,12 @@ def menu(ctx, options, state, training):
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--graph-version',type=int, choices=(4,5),default=5)
+    p.add_argument('--source',type=Path,default=PARENT)
     p.add_argument('--out',type=Path)
     p.add_argument('--director-mode',choices=('llm','fixed_priority'))
     p.add_argument('--ranking-report',type=Path)
     p.add_argument('--overrides',type=Path,help='JSON v5 spec overrides for a fresh campaign, including measured calibrations')
+    p.add_argument('--allow-degraded',action='store_true')
     p.add_argument('--real',action='store_true')
     p.add_argument('--allow-agent',action='store_true')
     mode=p.add_mutually_exclusive_group()
@@ -199,8 +226,11 @@ def main(argv=None):
         p.error('Director, calibration and ranking overrides require v5')
     overrides=campaign.read(args.overrides) if args.overrides else {}
     if args.director_mode:overrides.setdefault('director',{})['mode']=args.director_mode
-    initialize(PARENT,out,version=args.graph_version,ranking_report=args.ranking_report,overrides=overrides)
+    initialize(args.source,out,version=args.graph_version,ranking_report=args.ranking_report,overrides=overrides)
     cfg=campaign.read(out/'config.json')
+    if args.graph_version==5:
+        from bottle_scan.state_graph.calibrations import preflight
+        preflight(campaign.read(out/'spec.json'),args.real,args.allow_degraded)
     p3_force.load(cfg['consumer'])  # CPU-only preflight, before any robot connection
     if args.check:
         print(campaign.read(out/'continuation.json'))
@@ -219,7 +249,7 @@ def main(argv=None):
                 # Six stages per round, with room for a final round and independent B.
                 # The trial/dispatch budgets and all explicit pause/stop states still apply.
                 options['max_decisions']=6*(policy['budget']['max_new_trials']+1)+1
-        state=campaign.run(out,real=args.real,allow_agent=args.allow_agent,on_interruption=campaign_ah.offer_defer,**options)
+        state=campaign.run(out,allow_degraded=args.allow_degraded,real=args.real,allow_agent=args.allow_agent,on_interruption=campaign_ah.offer_defer,**options)
         print({k:state[k] for k in ('phase','spent','complete','pending')})
         campaign_ah.show_deferred(state)
 

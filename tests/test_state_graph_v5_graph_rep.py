@@ -15,7 +15,7 @@ def spec():
 
 
 def test_resolution_noise_and_smallest_action_have_different_neighbors():
-    cfg=spec();cfg['graph']['resolution_min_edges']=2
+    cfg=spec();cfg['graph'].update(resolution_min_edges=2,observable_axes_only=False)
     nodes=[{'node_id':n} for n in 'abc']
     edges=[dict(source='a',target='b',u=[3,0]),dict(source='b',target='c',u=[-3,0])]
     D=np.array([[0,.42,.03],[.42,0,.46],[.03,.46,0]])

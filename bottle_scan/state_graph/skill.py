@@ -76,17 +76,30 @@ class SymbolicRecoverySkill:
         from .noise import measurement_distance
         if row.get('task_id')!=self.bundle['graph']['task_id']:
             return {'state':'Unknown','reason':'different_task','value':v,'policy':None}
-        support=[]
+        support=[]; distances={}
         for anchor in self.bundle.get('support',[]):
             if anchor['extractor_versions']!=row.get('extractor_versions'):continue
             d=measurement_distance(row,anchor,self.bundle['noise'])
+            distances[anchor['node_id']]=d
             if d<=self.bundle['graph'].get('radii',{}).get('support_distance',self.spec.get('runtime',{}).get('support_distance',1.)):
                 label=self.bundle['graph']['reachability'][cid][anchor['node_id']]
                 support.append((d,label['status'],anchor['node_id']))
         cfg=self.spec.get('runtime',{})
         beta=v.get('exit_probability');invocation=v.get('invocation_probability')
+        rate_ok=v['p_hat']>=condition.get('ready_p',.8)
+        fitted=self.bundle['graph'].get('ready_calibration',{}).get(cid)
+        if fitted is not None:
+            from scipy.stats import beta as posterior
+            a,b=condition.get('p_prior',[1,1]);n=s=0.
+            for group in fitted['terminal_groups']:
+                d=min(distances.get(i,np.inf) for i in group['nodes'])
+                weight=np.exp(-.5*(d/fitted['h_ready'])**2)
+                n+=weight;s+=weight*group['success']
+            lb=float(posterior.ppf(self.spec['sinks']['ready_quantile'],a+s,b+max(0.,n-s)))
+            rate_ok=fitted['threshold'] is not None and n>=condition.get('min_ready_trials',3) and lb>=fitted['threshold']
+            v.update(kernel_lower=lb,effective_trials=n)
         ready=(any(s[1]=='ready' for s in support) and beta is not None and beta>=cfg.get('exit_classifier_p',.5)
-               and v['p_hat']>=condition.get('ready_p',.8))
+               and rate_ok)
         if ready:return {'state':'ready','value':v,'policy':None,'plan':None,'support':support}
         if readiness_only:
             return {'state':'not_ready' if support else 'Unknown','value':v,'support':support,

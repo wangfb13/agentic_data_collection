@@ -237,24 +237,38 @@ class RealIO:
         from .placement_witness import witness,label
         self.reference_path=Path(request['campaign'])/'placement_references'/self.placement/'active.json'
         if self.reference_path.exists():self.reference=campaign.read(self.reference_path)
+        automatic=self.spec.get('geometry',{}).get('automatic_reference_check',False)
         reuse=False
         if self.reference and self.reference.get('valid') and self.reference['mass_class']==self.mass and self.reference['reference_digest']==self.identity[0]['reference_digest']:
-            reuse=input('自上次参考轻触以来，同一瓶始终处于同一放置、未被移动或重新放置？y / n：').strip().lower() in ('yes','y')
+            answer=input('自上次参考轻触以来，同一瓶始终处于同一放置、未被移动或重新放置？y / n：').strip().lower()
+            if automatic:
+                from .reference_check import verify
+                reuse=verify(self,answer)
+            else:reuse=answer in ('yes','y')
         recalibrate=bool(request.get('recalibrate_reference') or request.get('operation')=='recalibrate_reference')
         if recalibrate:reuse=False
         if not reuse:
             self.invalidate_reference()
             if input('请以已确认标准夹法对准现在的瓶子、全开并结束遥操。输入 REFERENCE 见证本次放置参考：').strip()!='REFERENCE':
+                if automatic:
+                    from .p3_placement import reference_unavailable
+                    return reference_unavailable(self,request,'reference_witness_declined')
                 raise campaign.RetryTrial('未见证放置参考')
             with self.contact(-1) as raw:
                 if not raw:
                     reason={'object_moved':'参考轻触有效，但瓶位确认回答为否，需重新放稳',
                             'placement_unconfirmed':'参考轻触有效，但未确认瓶位（请输入 y 或 n）'}.get(self.contact_failure,'未获得参考双侧接触')
+                    if automatic:
+                        from .p3_placement import reference_unavailable
+                        return reference_unavailable(self,request,reason)
                     raise campaign.RetryTrial(reason)
                 if raw['provenance'].get('placement_continuity') is False:
                     from .p3_placement import reference_unavailable
                     return reference_unavailable(self,request,'placement_not_confirmed',raw)
                 r=witness(raw,self.placement,self.identity[0]['reference_digest'])
+                if automatic:
+                    from copy import deepcopy
+                    r['raw_witness']=deepcopy(raw)
                 self.reference=r
                 self.reference_path.parent.mkdir(parents=True,exist_ok=True)
                 campaign.atomic(self.reference_path.with_name(r['placement_reference_id']+'.json'),r)
@@ -281,6 +295,9 @@ class RealIO:
                         return reference_unavailable(self,request,'reference_repeat_not_coordinate_compatible',repeat_window)
                     repeat_window.update(is_reference=True,session=self.placement+'/'+r['placement_reference_id'])
                     self.reference_windows.append(repeat_window)
+        if automatic and not reuse and getattr(self,'reference_check',None):
+            self.reference_check['rewitnessed']=True
+            campaign.atomic(self.directory/'reference_check'/'check.json',self.reference_check)
         if self.reference.get('valid') and any(k in request['settings'] for k in coord_names(self.spec)):
             u=[request['settings'].get(k,0) for k in coord_names(self.spec)]
             from .p3_prepare import prepare_position

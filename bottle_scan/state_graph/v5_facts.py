@@ -188,7 +188,20 @@ def axis_facts(rows,graph,noise,spec,cid):
             delta=np.concatenate([(transform(b,n,noise)-transform(a,n,noise))@matrices[n] for n in signals])
             data.append((group_id(a),u[i],delta,edge['edge_id']))
         groups=sorted({d[0] for d in data})
-        if len(groups)>=cfg['min_axis_trials']:
+        if spec.get('graph',{}).get('observable_axes_only'):
+            from .axis_resolution import axis_observable
+            from .noise import pairwise_distances
+            name=spec['task']['action_space']['names'][i]
+            stats=graph.get('resolution',{}).get('by_axis',{}).get(name)
+            if (stats is None or 'observable' not in stats) and not noise.get('active_modalities'):
+                stats={'observable':None}
+            if stats is None or 'observable' not in stats:
+                obs=[e for e in graph['edges'] if e['kind']=='observed']
+                stats=axis_observable(rows,obs,pairwise_distances(rows,noise),spec,i)
+            if stats['observable'] is not None:
+                result.append(_fact('axis_observable' if stats['observable'] else 'axis_unobservable',[var],
+                    [nid for pair in stats['evidence'] for nid in pair], dict(stats,coordinate_source='measured_action')))
+        elif len(groups)>=cfg['min_axis_trials']:
             def sensitivity(ds):
                 x=np.array([t[1] for t in ds]);z=np.array([t[2] for t in ds])
                 return float(np.linalg.norm(x@z/(x@x)))
@@ -216,6 +229,9 @@ def revise(base,graph,rows,labels,clusters,noise,spec,models):
     if ops.get('handle_drift_and_unsupported'):skip.add('unsupported')
     if spec.get('labels',{}).get('include_inferred') is False:skip.add('inferred_edge_unverified')
     facts=[f for f in base if f['pred'] not in skip];byid={r['node_id']:r for r in rows}
+    for cid,calibration in graph.get('ready_calibration',{}).items():
+        if calibration['threshold'] is None:
+            facts.append(_fact('ready_threshold_unattainable',[cid],rows,calibration))
     for f in facts:
         if strict and f['pred']=='coverage' and f['args'][0] in continuous(spec):f['metrics']['coordinate_source']='measured' if cfg.get('measured_placement_coordinates') else 'legacy'
     for condition in spec['post_conditions']:

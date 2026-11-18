@@ -66,7 +66,7 @@ def fit_noise(rows,spec):
         from .graph import observed_edges
         M=metric_distance_mm(rows,result)
         base=pairwise_distances(rows,result)
-        scale,_=resolution(rows,observed_edges(rows,spec),base,spec,M)
+        scale,_=resolution(rows,observed_edges(rows,spec),base,spec,M,metric_axes=[('r','h').index(x) for x in result['tac_metric']['axes']] if spec['observation'].get('metric_per_axis') else None)
         ratios=[a['scale']/a['metric_scale_mm'] for a in scale['by_axis'].values() if a.get('metric_scale_mm') and a['scale']]
         result['metric_resolution']=scale
         if ratios:result['metric_normalized_per_mm']=float(max(ratios))

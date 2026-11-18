@@ -61,7 +61,7 @@ def test_stratified_gaps_signs_noise_and_floor():
 
 
 def test_capability_uses_single_axis_receipts_and_grouped_outcomes():
-    s=spec();rows=[];edges=[]
+    s=spec();s['graph']['observable_axes_only']=False;rows=[];edges=[]
     for i in range(18):
         x=i-8
         a=row(f'{i}a',x,0,x>=0);a['provenance']['direct_A']=True
@@ -103,7 +103,7 @@ def ep(i,role,x,ok,model=None,**extra):
 
 
 def test_frontier_distinct_roles_versions_gaps_unmeasured_and_stop():
-    s=spec();rs=[ep(1,'direct',1,True),ep(2,'policy',3,True,'A'),ep(3,'expert',8,True),
+    s=spec();s['facts']['rate_based_frontier']=False;rs=[ep(1,'direct',1,True),ep(2,'policy',3,True,'A'),ep(3,'expert',8,True),
                  ep(4,'policy',18,True,'B'),ep(5,'policy',19,True,'A',post_freeze=True)]
     missing=ep(6,'expert',19,True);missing['first_contact']=None
     rs.append(missing);fs=episode_frontiers(rs,s,'lift',model_id='A')
@@ -175,7 +175,7 @@ def test_measured_region_score_omits_unrelated_same_trial_nodes():
 def test_expert_gap_select_retrain_and_remeasure_converges(tmp_path):
     """A deliberately learnable synthetic environment; the real training and decision APIs are used."""
     from bottle_scan.state_graph.policy import fit_policy,predict_policy
-    s=spec();s['models']={'min_policy_transitions':1,'ensemble':4};s['director']['plan_reps']=1
+    s=spec();s['facts']['rate_based_frontier']=False;s['models']={'min_policy_transitions':1,'ensemble':4};s['director']['plan_reps']=1
     # Only one active axis here. Existing synthetic witness at +6 is initially reserved for comparison.
     s['perturbation_variables']['h']['active']=False
     rule=initial_rule([],s);noise={'active_modalities':['tac'],'modalities':{'tac':dict(status='ready',mean=[0,0],components=None,single_covariance=[[1,0],[0,1]])}}

@@ -1,0 +1,30 @@
+{
+  "sinks": {
+    "kernel_ready": true,
+    "ready_kernel": "gaussian",
+    "ready_bandwidths": [
+      0.25,
+      0.5,
+      1,
+      2
+    ],
+    "ready_thresholds": [
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9
+    ],
+    "max_false_release_rate": 0.15
+  },
+  "graph": {"observable_axes_only": true, "observable_ratio": 1.5, "axis_residual_mm": 1.0, "axis_residual_fraction": 0.15},
+  "geometry": {"automatic_reference_check": true, "verification_pose_tolerance_mm": 2.0},
+  "observation": {"metric_per_axis":true, "metric":{"max_error_by_axis_mm":{"r":1.5,"h":1.5},"min_axis_motion_mm":0.25,"min_relative_gain":0.05}},
+  "facts": {"rate_based_frontier":true,"frontier_success_target":0.8,"frontier_min_trials":5,"physical_failure_fraction":0.9},
+  "acceptance": {"lower_bound_gates":true,"primary_rates":["recovery_success_rate"],"rate_confidence":0.95,"p3_validation_repetitions":2},
+  "report": {
+    "green_correct_release_relative_tolerance": 0.1
+  }
+}

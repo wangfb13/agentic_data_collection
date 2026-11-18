@@ -3,25 +3,30 @@ from collections import defaultdict
 import numpy as np
 
 
-def resolution(rows, observed, D, spec, metric_mm=None):
+def resolution(rows, observed, D, spec, metric_mm=None, metric_axes=None):
     cfg=spec['graph']
     indices={r['node_id']:i for i,r in enumerate(rows)}
+    from .axis_resolution import single_axis, axis_observable
+    gated=cfg.get('observable_axes_only',False)
     by_axis={}
     for k,name in enumerate(spec['task']['action_space']['names']):
         samples=[]
         for edge in observed:
             u=edge.get('u')
-            if not edge.get('executable',True) or u is None or np.count_nonzero(u)!=1 or u[k]==0:
+            if not edge.get('executable',True) or u is None or (single_axis(edge,spec)!=k if gated else np.count_nonzero(u)!=1 or u[k]==0):
                 continue
             d=D[indices[edge['source']],indices[edge['target']]]
             if np.isfinite(d):
-                m=None if metric_mm is None else metric_mm[indices[edge['source']],indices[edge['target']]]
+                m=None if metric_mm is None or (metric_axes is not None and k not in metric_axes) else metric_mm[indices[edge['source']],indices[edge['target']]]
                 samples.append((abs(u[k]),float(d),edge['source'],edge['target'],m))
         smallest=min((s[0] for s in samples),default=None)
         selected=[s for s in samples if s[0]<=smallest*(1+cfg['min_action_bin_relative_tolerance'])]
         enough=len(selected)>=cfg['resolution_min_edges']
+        diagnostics=axis_observable(rows,observed,D,spec,k) if gated else {}
+        if gated:enough=enough and diagnostics['observable'] is True
         scale=float(np.median([s[1] for s in selected])) if enough else None
-        by_axis[name]={'metric_scale_mm':float(np.median([s[4] for s in selected])) if enough and metric_mm is not None else None,'minimum_amplitude_mm':smallest,'n':len(selected),'scale':scale,
+        if gated:diagnostics.update(used=enough,reason=diagnostics['reason'] or (None if enough else 'insufficient_minimum_amplitude_edges'))
+        by_axis[name]={**diagnostics,'metric_scale_mm':float(np.median([s[4] for s in selected])) if enough and selected[0][4] is not None else None,'minimum_amplitude_mm':smallest,'n':len(selected),'scale':scale,
                        'edges':[[s[2],s[3]] for s in selected],'status':'measured' if enough else 'missing'}
     # Generic distances have no candidate action axis. Use the tightest resolved
     # axis; use the v4 radius for an axis with insufficient action evidence.

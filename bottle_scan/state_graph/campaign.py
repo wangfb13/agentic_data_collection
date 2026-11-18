@@ -479,10 +479,14 @@ def apply_decision(out,state,spec,answer):
     atomic(Path(out)/'state.json',state)
 
 
-def run(out,*,real=False,allow_agent=False,provider=None,executor=None,interactive=True,max_decisions=50,on_interruption=None):
+def run(out,*,real=False,allow_degraded=False,allow_agent=False,provider=None,executor=None,interactive=True,max_decisions=50,on_interruption=None):
     out=Path(out).resolve()
     with ownership(out):
         state=read(out/'state.json');spec=load_spec(out/'spec.json');cfg=read(out/'config.json')
+        if spec.get('graph_schema')=='state_graph_v5':
+            from .calibrations import preflight
+            state['calibration_preflight']=preflight(spec,real,allow_degraded)
+            atomic(out/'state.json',state)
         if spec.get('loop',{}).get('rounds'):
             from .rounds import run_locked
             return run_locked(out,state,spec,cfg,real=real,executor=executor,provider=provider,
@@ -515,6 +519,7 @@ def run(out,*,real=False,allow_agent=False,provider=None,executor=None,interacti
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('command',choices=['init','advance','run','status','review','resolve-interrupted'])
     parser.add_argument('--config',default='config.state_graph.campaign_v4.json');parser.add_argument('--out',required=True)
+    parser.add_argument('--allow-degraded',action='store_true')
     parser.add_argument('--real',action='store_true');parser.add_argument('--allow-agent',action='store_true');parser.add_argument('--trial');parser.add_argument('--evidence');parser.add_argument('--noninteractive',action='store_true')
     args=parser.parse_args(argv);out=Path(args.out).resolve()
     if args.command=='init':
@@ -539,5 +544,5 @@ def main(argv=None):
                 if result is None:raise ValueError('No completed evidence available; do not replay this trial')
                 atomic(Path(trial['directory'])/'result.json',result)
             accept_result(out,state,trial,spec)
-    else:state=run(out,real=args.real and args.command=='run',allow_agent=args.allow_agent,interactive=not args.noninteractive)
+    else:state=run(out,allow_degraded=args.allow_degraded,real=args.real and args.command=='run',allow_agent=args.allow_agent,interactive=not args.noninteractive)
     print(json.dumps(clean({'out':str(out),'phase':state['phase'],'spent':state['spent'],'pending':state['pending'],'complete':state['complete']}),ensure_ascii=False));return 0

@@ -23,7 +23,7 @@ METRICS={'frontier_gap':['length_mm'],'coordinate_resolution':['resolution_mm','
          'axis_unobservable':['sensitivity'],'axis_consequential':['p_adjusted'],'axis_inconsequential':['p_adjusted'],
          'boundary_gap':['gap'],'boundary_within_cluster':['p_adjusted'],'no_failure':['terminal_count']}
 for _p in ('direct_boundary','policy_frontier','expert_frontier'):
-    METRICS[_p]=['farthest_observed_success','trials','n_success','evaluated_trials']
+    METRICS[_p]=['verified_edge_mm','farthest_observed_success','trials','n_success','evaluated_trials']
 COMPARE={'lt':operator.lt,'le':operator.le,'eq':operator.eq,'ge':operator.ge,'gt':operator.gt}
 COLLECTION=NEW_COLLECTION|set('collect_seed collect_outcomes collect_transitions expand_range densify activate_variable probe_hidden_variable block_by_property repeat_state verify_edges validate_B'.split())
 

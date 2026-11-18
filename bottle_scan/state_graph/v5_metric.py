@@ -38,10 +38,10 @@ def pairs(rows,spec):
              [a['node_id'],b['node_id']]) for a,b,y,kind in items]
 
 
-def fit_head(items,cfg):
+def fit_head(items,cfg,rank=2):
     if {p[2] for p in items}!={'action','repeat'}:return None
     X=np.array([p[0] for p in items]);Y=np.array([p[1] for p in items])
-    if np.linalg.matrix_rank(Y)<2:return None
+    if np.linalg.matrix_rank(Y)<rank:return None
     w=np.sqrt([cfg['displacement_weight'] if p[2]=='action' else cfg['repeat_weight'] for p in items])
     X=X*w[:,None];Y=Y*w[:,None];alpha=cfg['ridge']
     if X.shape[1]>len(X):return X.T@np.linalg.solve(X@X.T+alpha*np.eye(len(X)),Y)
@@ -54,6 +54,9 @@ def fit_metric(rows,spec):
     result={'status':'insufficient_measured_transitions_or_repeats','unit':'mm','axes':['r','h'],
             'input':name,'objects':sorted({str(r.get('attrs',{}).get('object_id') or r.get('task_id')) for r in rows}),
             'fit_groups':sorted(set(map(group_id,rows))),'heldout_samples':[]}
+    if spec['observation'].get('metric_per_axis'):
+        from .axis_metric import fit_axis_metric
+        return fit_axis_metric(rows,spec,result)
     if len(result['fit_groups'])<cfg['min_groups']:return result
     all_pairs=pairs(rows,spec);head=fit_head(all_pairs,cfg)
     if head is None:return result
