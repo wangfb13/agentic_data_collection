@@ -23,11 +23,11 @@ class SimulatedHardware:
         self.cfg={'force':{'normal_axis':2},'lower':dict(unload_abs_sdk=.5,unload_ratio=.2,frames=3,min_descent_mm=1.,mapping_min_cosine=.7),
                   'motion':dict(near_speed_mm_s=20.,free_speed_mm_s=20.,max_lift_mm=60.,pose_tolerance_mm=2.)}
 
-    def force_sample(self):
+    def force_sample(self, **pairing):
         stamp=time.monotonic_ns()//20_000_000*20_000_000
         force=max(.12,.7+(.367-self.opening)*120)
         return dict(sequence=[stamp,stamp],stamps=[stamp,stamp],wrench_zeroed=[[.3,0.,force,0.,0.,0.]]*2,
-                    normal=[force,force],contact_thresholds=[.1,.1])
+                    normal=[force,force],contact_thresholds=[.1,.1],raw={'wrench_pairing':{'simulated':True,**pairing}})
 
     def fresh(self):return {'normalized':self.opening}
     def _publish(self,command,kind):self.opening=command

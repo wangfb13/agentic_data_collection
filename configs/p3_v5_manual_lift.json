@@ -1,0 +1,11 @@
+{
+  "consumer": {
+    "auto_l2": false
+  },
+  "observation": {
+    "tac_version": "legacy_pixel"
+  },
+  "loop": {
+    "run_through_budget": true
+  }
+}

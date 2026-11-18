@@ -70,8 +70,14 @@ def samples(f):
 
 def sampling_worker(hw,expected,predictor):
     from forcepolicy.runtime import RuntimeConfig,ForcePolicyRuntime
-    return ForcePolicyRuntime(predictor,lambda:samples(hw.force_sample()),
+    return ForcePolicyRuntime(predictor,lambda:samples(paired_force_sample(hw)),
                               RuntimeConfig(contact_threshold=expected['runtime_contact_threshold']))
+
+
+def paired_force_sample(hw):
+    # Same limits as ForcePolicyRuntime. Both model and controller consume
+    # real paired frames; per-frame force protection still uses every arrival.
+    return hw.force_sample(pair_skew_s=.05,pair_max_age_s=.2)
 
 
 def consume(hw,expected,directory,controller,worker,ask=input,options=None):
@@ -84,7 +90,7 @@ def consume(hw,expected,directory,controller,worker,ask=input,options=None):
         with (directory/'force_trace.jsonl').open('x',buffering=1) as trace:
             def tick(regulate=True):
                 hw.check()
-                f=hw.force_sample()
+                f=paired_force_sample(hw)
                 if any(v is None for v in f['sequence']):
                     raise RuntimeError('Missing X5 source frame identity')
                 g=hw.grip
@@ -103,7 +109,8 @@ def consume(hw,expected,directory,controller,worker,ask=input,options=None):
                         if command<.330-1e-9 or not math.isfinite(command):
                             raise RuntimeError('ForcePolicy command outside closure limits')
                         g._publish(command,'p3_forcepolicy')
-                info.update(force_sequences=f['sequence'],wrench_zeroed=f['wrench_zeroed'])
+                info.update(force_sequences=f['sequence'],wrench_zeroed=f['wrench_zeroed'],
+                            force_stamps_ns=f['stamps'],wrench_pairing=f['raw'].get('wrench_pairing'))
                 info['bilateral']=all(n>t for n,t in zip(f['normal'],f['contact_thresholds']))
                 if options and options.get('auto_l2'):
                     info['centroids']=lift_evidence.centroids(f['raw']['dd'],hw.dd_reference,hw.cfg['tactile'])
@@ -119,7 +126,8 @@ def lift_test(hw,params,directory,tick,*,ask=input,clock=time.monotonic):
     path=directory/'consumer.json'
     air=directory/'airborne.json'
     out=dict(controller=params.get('controller','existing_forcepolicy'),version=params['version'],params={'closure_floor':params.get('closure_floor',.33)},
-             L1=None,L2=None,evidence=[str(directory/'force_trace.jsonl')],lift_mm=params['lift_mm'],hold_s=params['hold_s'])
+             L1=None,L2=None,evidence=[str(directory/'force_trace.jsonl')],lift_mm=params['lift_mm'],hold_s=params['hold_s'],
+             execution_bridge_version='p3_receive_pair_batch_write_20261118_v1')
     def save(reason):
         out['reason']=reason
         atomic(path,out)

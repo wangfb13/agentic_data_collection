@@ -131,38 +131,62 @@ class RealIO:
             if self.assets is not None:
                 worker=self.worker=p3_force.sampling_worker(hw,self.consumer,self.assets[0])
                 worker.start()
-            before=hw.pose()
             runner=Runner(SimpleNamespace(out=folder,cond='A',step=False),self.cfg,None,hw)
+            def finish_capture(record_path,before,status,p):
+                hw.hold()
+                row=dict(status=status,probe=p,unloaded_zero=zero,window_pose=getattr(hw,'window_pose',None),
+                         touch_report=runner.last_touch_report,before_pose=before,after_pose=hw.pose(),
+                         reference_digest=self.identity[0]['reference_digest'],finger_serials=self.identity[2])
+                campaign.atomic(record_path,row)
+                hw.end_record()
+                raw=None
+                if status=='contact' and p and p.get('valid'):
+                    fb=row['window_pose']
+                    if fb['tcp_frame']!='right_gripper_base_link' or hw.arm.snapshot()['base_frame']!='base_link':
+                        raise ValueError('Unexpected tool/base frames')
+                    pose=validate_transform(fb['T_base_tcp_mm'])
+                    raw=ah_evidence.captured_window(record_path,self.identity,None,self.group,index,{},self.mass,'P3',pose,row)
+                    if capture_masks:
+                        from .placement_witness import label
+                        raw['finger_masks']=dict(zip(('left','right'),[m.astype(int).tolist() for m in hw.window_masks]))
+                        raw['provenance']['sensor_version']=self.identity[2]
+                        raw['session']=self.placement
+                        if index>=0 and self.spec.get('facts',{}).get('measured_placement_coordinates'):
+                            label(raw,self.reference,self.cfg['axes_tcp']['a'],self.spec)
+                            raw['repeat_settings']=self.request['settings'] if index==0 else {}
+                else:
+                    self.contact_failure='contact_lost'
+                return raw,row
+            self.contact_failure=None
+            before=hw.pose()
             active=True
             status,p=runner.touch()
-            hw.hold()
-            row=dict(status=status,probe=p,unloaded_zero=zero,window_pose=getattr(hw,'window_pose',None),
-                     touch_report=runner.last_touch_report,before_pose=before,after_pose=hw.pose(),
-                     reference_digest=self.identity[0]['reference_digest'],finger_serials=self.identity[2])
-            campaign.atomic(path,row)
-            hw.end_record()
-            raw=None
-            if status=='contact' and p and p.get('valid'):
-                fb=row['window_pose']
-                if fb['tcp_frame']!='right_gripper_base_link' or hw.arm.snapshot()['base_frame']!='base_link':
-                    raise ValueError('Unexpected tool/base frames')
-                pose=validate_transform(fb['T_base_tcp_mm'])
-                raw=ah_evidence.captured_window(path,self.identity,None,self.group,index,{},self.mass,'P3',pose,row)
-                if capture_masks:
-                    from .placement_witness import label
-                    raw['finger_masks']=dict(zip(('left','right'),[m.astype(int).tolist() for m in hw.window_masks]))
-                    raw['provenance']['sensor_version']=self.identity[2]
-                    raw['session']=self.placement
-                    if index>=0 and self.spec.get('facts',{}).get('measured_placement_coordinates'):
-                        label(raw,self.reference,self.cfg['axes_tcp']['a'],self.spec)
-                        raw['repeat_settings']=self.request['settings'] if index==0 else {}
-                # Only an unmoved bottle supports a contact-to-contact transition or direct reference.
-                if input('从本次首触至现在，瓶一直在原处直立、未被推移？y / n：').strip().lower() not in ('y','yes'):
-                    self.contact_failure='object_moved'
+            raw,row=finish_capture(path,before,status,p)
+            if raw is not None:
+                answer=input('仅看刚才这次轻触：瓶子未被推移？y / n（n 继续采集，但不使用旧位置标签）：').strip().lower()
+                confirmation={'answer':answer,'unmoved':True if answer in ('y','yes') else False if answer in ('n','no') else None}
+                row['placement_confirmation']=confirmation
+                campaign.atomic(path,row)
+                if confirmation['unmoved'] is not True:
+                    from .p3_placement import unlabelled_contact
                     self.invalidate_reference()
-                    raw=None
-            elif capture_masks:
-                self.contact_failure='contact_lost'
+                    if index>=0:
+                        # The pre-confirmation window may predate the movement.
+                        # Acquire a new stable window at the same PROBE protocol;
+                        # no arm motion and no reused position label.
+                        refreshed=folder/'after_placement_confirmation'
+                        refreshed.mkdir()
+                        self.probe_refresh_count=getattr(self,'probe_refresh_count',0)+1
+                        hw.begin_record(refreshed/'record')
+                        before=hw.pose()
+                        f=self.cfg['force']
+                        p=runner.regulate('PROBE',f['probe_fraction']*f['target'],f['probe_tolerance'],f['probe_stable_s'],with_dd=True)
+                        status='contact' if p and p.get('valid') else 'probe_unstable'
+                        runner.note_touch(status,hw.snapshot(),p)
+                        raw,new_row=finish_capture(refreshed/'observation.json',before,status,p)
+                        new_row.update(placement_confirmation=confirmation,original_observation=str(path))
+                        campaign.atomic(refreshed/'observation.json',new_row)
+                    raw=unlabelled_contact(raw,confirmation,original_observation=path,refreshed=index>=0)
             yield raw
         finally:
             try:
@@ -193,6 +217,9 @@ class RealIO:
             self.spec['task']['action_space']['max_step'][k],self.z_limits,campaign_ah.child)
 
     def link(self,first,last,receipt,u):
+        if last['provenance'].get('placement_continuity') is False:
+            last['provenance']['transition_excluded_reason']='object_placement_changed_or_unconfirmed'
+            return
         ah_evidence.link(first,last,[receipt],self.cfg['axes_tcp']['a'],command=u,spec=self.spec)
 
     def consume(self):
@@ -220,7 +247,13 @@ class RealIO:
             if input('请以已确认标准夹法对准现在的瓶子、全开并结束遥操。输入 REFERENCE 见证本次放置参考：').strip()!='REFERENCE':
                 raise campaign.RetryTrial('未见证放置参考')
             with self.contact(-1) as raw:
-                if not raw:raise campaign.RetryTrial('未获得参考双侧接触')
+                if not raw:
+                    reason={'object_moved':'参考轻触有效，但瓶位确认回答为否，需重新放稳',
+                            'placement_unconfirmed':'参考轻触有效，但未确认瓶位（请输入 y 或 n）'}.get(self.contact_failure,'未获得参考双侧接触')
+                    raise campaign.RetryTrial(reason)
+                if raw['provenance'].get('placement_continuity') is False:
+                    from .p3_placement import reference_unavailable
+                    return reference_unavailable(self,request,'placement_not_confirmed',raw)
                 r=witness(raw,self.placement,self.identity[0]['reference_digest'])
                 self.reference=r
                 self.reference_path.parent.mkdir(parents=True,exist_ok=True)
@@ -236,17 +269,23 @@ class RealIO:
                 with self.contact(-(1+i)) as repeat_window:
                     if repeat_window is None:
                         self.invalidate_reference()
-                        raise campaign.RetryTrial('参考重复未获得有效双侧接触')
+                        reason={'object_moved':'参考重复轻触有效，但瓶位确认回答为否',
+                                'placement_unconfirmed':'参考重复轻触有效，但未确认瓶位（请输入 y 或 n）'}.get(self.contact_failure,'参考重复未获得有效双侧接触')
+                        raise campaign.RetryTrial(reason)
+                    if repeat_window['provenance'].get('placement_continuity') is False:
+                        from .p3_placement import reference_unavailable
+                        return reference_unavailable(self,request,'reference_repeat_placement_not_confirmed',repeat_window)
                     label(repeat_window,r,self.cfg['axes_tcp']['a'],self.spec)
                     if not repeat_window['provenance']['placement_reference_valid']:
-                        self.invalidate_reference()
-                        raise campaign.RetryTrial('参考重复期间接触位置改变')
+                        from .p3_placement import reference_unavailable
+                        return reference_unavailable(self,request,'reference_repeat_not_coordinate_compatible',repeat_window)
                     repeat_window.update(is_reference=True,session=self.placement+'/'+r['placement_reference_id'])
                     self.reference_windows.append(repeat_window)
         if self.reference.get('valid') and any(k in request['settings'] for k in coord_names(self.spec)):
             u=[request['settings'].get(k,0) for k in coord_names(self.spec)]
-            campaign_ah.prepare_position(self.directory,np.array(self.reference['pose']),u,self.cfg,self.spec,campaign_ah.child,
-                                         station_z_bounds=self.z_limits)
+            from .p3_prepare import prepare_position
+            prepare_position(self.directory,np.array(self.reference['pose']),u,self.cfg,self.spec,campaign_ah.child,
+                             station_z_bounds=self.z_limits)
 
     def expert_action(self,raw):
         """Human expert specifies one signed movement through the same owned executor."""

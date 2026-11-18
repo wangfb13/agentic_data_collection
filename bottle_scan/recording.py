@@ -63,55 +63,69 @@ class H5Writer:
         self._lock = threading.Lock()
 
     def append(self, stream, data, monotonic_ns, device_timestamp=None, attrs=None):
-        name = _name(stream)
-        array = np.asarray(data)
-        if array.dtype.kind not in "biufc" or not array.size:
-            raise ValueError("Raw HDF5 data must be a nonempty numeric array/scalar")
-        if isinstance(monotonic_ns, bool) or not isinstance(monotonic_ns, (int, np.integer)) or monotonic_ns < 0:
-            raise ValueError("monotonic_ns must be a nonnegative integer")
-        device = float("nan") if device_timestamp is None else float(device_timestamp)
-        if device_timestamp is not None and not math.isfinite(device):
-            raise ValueError("Source timestamp must be finite or None")
-        metadata = dict(attrs or {})
-        metadata["device_timestamp_raw"] = device_timestamp
-        metadata_text = _json(metadata)
+        return self.append_many([(stream,data,monotonic_ns,device_timestamp,attrs)])[0]
+
+    def append_many(self, records):
+        """Commit a bounded batch without per-frame resize/flush overhead.
+
+        Every payload, timestamp and metadata row remains intact. Counts and
+        acknowledgements advance only after all fields have been flushed.
+        """
+        grouped={};indices=[]
         with self._lock:
-            root = self._file["streams"]
-            if name not in root:
-                group = root.require_group(name)
-                if list(group.keys()):
-                    raise ValueError("Stream name collides with another stream namespace")
-                group.attrs["committed_count"] = 0
-                group.create_dataset("data", shape=(0, *array.shape), maxshape=(None, *array.shape),
-                                     chunks=(1, *array.shape), dtype=array.dtype, compression=self.compression, shuffle=True)
-                for key, dtype in (("monotonic_ns", "i8"), ("device_timestamp", "f8"), ("sequence", "i8")):
-                    group.create_dataset(key, shape=(0,), maxshape=(None,), chunks=True, dtype=dtype, compression="gzip")
-                group.create_dataset("metadata_json", shape=(0,), maxshape=(None,), chunks=True,
-                                     dtype=h5py.string_dtype("utf-8"))
-            group = root[name]
-            if "data" not in group:
-                raise ValueError("Stream name collides with another stream namespace")
-            dataset = group["data"]
-            if dataset.shape[1:] != array.shape or dataset.dtype != array.dtype:
-                raise ValueError(f"{name}: raw shape/dtype changed; start a new explicitly identified stream")
-            index = int(group.attrs["committed_count"])
-            if index and monotonic_ns < group["monotonic_ns"][index-1]:
-                raise ValueError(f"{name}: host monotonic time moved backwards")
-            values = {"data": array, "monotonic_ns": monotonic_ns, "device_timestamp": device,
-                      "sequence": index, "metadata_json": metadata_text}
+            root=self._file['streams']
+            for stream,data,stamp,device,attrs in records:
+                name=_name(stream);array=np.asarray(data)
+                if array.dtype.kind not in 'biufc' or not array.size:
+                    raise ValueError('Raw HDF5 data must be a nonempty numeric array/scalar')
+                if isinstance(stamp,bool) or not isinstance(stamp,(int,np.integer)) or stamp<0:
+                    raise ValueError('monotonic_ns must be a nonnegative integer')
+                dev=float('nan') if device is None else float(device)
+                if device is not None and not math.isfinite(dev):
+                    raise ValueError('Source timestamp must be finite or None')
+                meta=dict(attrs or {});meta['device_timestamp_raw']=device
+                text=_json(meta)
+                if name not in root:
+                    group=root.require_group(name)
+                    if list(group.keys()):raise ValueError('Stream name collides with another stream namespace')
+                    group.attrs['committed_count']=0
+                    group.create_dataset('data',shape=(0,*array.shape),maxshape=(None,*array.shape),
+                                         chunks=(1,*array.shape),dtype=array.dtype,compression=self.compression,shuffle=True)
+                    for key,dtype in (('monotonic_ns','i8'),('device_timestamp','f8'),('sequence','i8')):
+                        group.create_dataset(key,shape=(0,),maxshape=(None,),chunks=True,dtype=dtype,compression='gzip')
+                    group.create_dataset('metadata_json',shape=(0,),maxshape=(None,),chunks=True,dtype=h5py.string_dtype('utf-8'))
+                group=root[name]
+                if 'data' not in group:raise ValueError('Stream name collides with another stream namespace')
+                dataset=group['data']
+                if dataset.shape[1:]!=array.shape or dataset.dtype!=array.dtype:
+                    raise ValueError(f'{name}: raw shape/dtype changed; start a new explicitly identified stream')
+                count=int(group.attrs['committed_count'])
+                rows=grouped.setdefault(name,{'start':count,'rows':[]})['rows']
+                previous=rows[-1][1] if rows else group['monotonic_ns'][count-1] if count else None
+                if previous is not None and stamp<previous:
+                    raise ValueError(f'{name}: host monotonic time moved backwards')
+                indices.append(count+len(rows));rows.append((array,stamp,dev,text))
             try:
-                for key, value in values.items():
-                    group[key].resize(index+1, axis=0)
-                    group[key][index] = value
+                for name,batch in grouped.items():
+                    group=root[name];begin=batch['start'];rows=batch['rows'];end=begin+len(rows)
+                    values={'data':np.stack([r[0] for r in rows]),'monotonic_ns':[r[1] for r in rows],
+                            'device_timestamp':[r[2] for r in rows],'sequence':np.arange(begin,end),
+                            'metadata_json':[r[3] for r in rows]}
+                    for key,value in values.items():
+                        group[key].resize(end,axis=0);group[key][begin:end]=value
                 self._file.flush()
-                group.attrs.modify("committed_count", index+1)
+                for name,batch in grouped.items():
+                    root[name].attrs.modify('committed_count',batch['start']+len(batch['rows']))
                 self._file.flush()
             except Exception:
-                for key in values:
-                    group[key].resize(index, axis=0)
+                for name,batch in grouped.items():
+                    group=root[name]
+                    for key in ('data','monotonic_ns','device_timestamp','sequence','metadata_json'):
+                        group[key].resize(batch['start'],axis=0)
+                    group.attrs.modify('committed_count',batch['start'])
                 self._file.flush()
                 raise
-            return index
+        return indices
 
     def close(self):
         with self._lock:
@@ -356,8 +370,10 @@ def _writer_process(path,requests,status,quality,test_options):
         # acknowledgement ordering stay unchanged; no sampling/queue expansion.
         h5=H5Writer(root/"streams.h5",compression="lzf");jpg=JpegWriter(root/"images",quality=quality)
         status.put(("ready",None))
+        pending=None
         while True:
-            message=requests.get()
+            message=pending if pending is not None else requests.get()
+            pending=None
             if message[0]=="close":
                 error=message[1]
                 h5.close();jpg.close();h5=jpg=None
@@ -370,7 +386,24 @@ def _writer_process(path,requests,status,quality,test_options):
             if test_options.get("fail_after") is not None and count>=test_options["fail_after"]:
                 raise OSError("Injected writer failure")
             kind,args=pickle.loads(payload)
-            if kind=="h5":h5.append(*args)
+            if kind=="h5":
+                batch=[(sequence,size,args)];batch_bytes=size
+                # Bounded draining, no waiting for more samples. Non-H5 writes
+                # and close remain ordered barriers. Test fault injection keeps
+                # its original one-message semantics.
+                if not test_options:
+                    while len(batch)<128 and batch_bytes<8*1024*1024:
+                        try:following=requests.get_nowait()
+                        except queue.Empty:break
+                        if following[0]!='write':pending=following;break
+                        _,seq2,size2,payload2=following
+                        kind2,args2=pickle.loads(payload2)
+                        if kind2!='h5':pending=following;break
+                        batch.append((seq2,size2,args2));batch_bytes+=size2
+                h5.append_many([row[2] for row in batch])
+                count+=len(batch)
+                for seq2,size2,_ in batch:status.put(('ack',(seq2,size2)))
+                continue
             elif kind=="jpg":
                 expected=args[-1];actual=jpg.append(*args[:-1])
                 if actual!=expected:raise OSError("Deterministic JPEG filename order mismatch")

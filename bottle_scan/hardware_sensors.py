@@ -870,7 +870,7 @@ class ActualX5SensorSource:
         with self._condition:
             values=list(self._pending);self._pending.clear();return values
 
-    def observation_snapshot(self):
+    def observation_snapshot(self, *, pair_skew_s=None, pair_max_age_s=None):
         """Fresh unzeroed readings for initialization; never label them newtons."""
         with self._condition:
             if self._fault:raise SensorFault(self._fault)
@@ -880,13 +880,46 @@ class ActualX5SensorSource:
                 if not 0<=self.clock()-self._latest[key].monotonic_ns<=self.max_age_ns:
                     raise SensorFault("Stale source "+key)
             wrench=[self._latest["wrench_raw_"+s] for s in ("left","right")]
-            if abs(wrench[0].monotonic_ns-wrench[1].monotonic_ns)>self.max_skew_ns:
+            stamps=[w.monotonic_ns for w in wrench]
+            sequences=[w.metadata.get('fid') for w in wrench]
+            values=[w.data for w in wrench]
+            pairing=None
+            if pair_skew_s is not None:
+                if (not np.isfinite(pair_skew_s) or pair_skew_s<0 or
+                    pair_max_age_s is None or not np.isfinite(pair_max_age_s) or pair_max_age_s<=0):
+                    raise ValueError('Explicit finite pair skew and positive maximum age required')
+                age_ns=min(self.max_age_ns,int(pair_max_age_s*1e9))
+                skew_ns=min(self.max_skew_ns,int(pair_skew_s*1e9))
+                now=self.clock()
+                histories=[[x for x in self._raw_history[s] if 0<=now-x[0]<=age_ns]
+                           for s in ('left','right')]
+                i,j=len(histories[0])-1,len(histories[1])-1
+                # Newest admissible pair, using original receive stamps and fids.
+                # A newer arrival must not force pairing it with the other
+                # finger's old frame. Never interpolate or relabel timestamps.
+                while i>=0 and j>=0:
+                    left,right=histories[0][i],histories[1][j]
+                    if abs(left[0]-right[0])<=skew_ns:break
+                    if left[0]>right[0]:i-=1
+                    else:j-=1
+                if i<0 or j<0:
+                    raise SensorFault('Raw finger wrench time skew: no fresh admissible pair')
+                matched=(histories[0][i],histories[1][j])
+                stamps=[x[0] for x in matched];values=[x[1] for x in matched];sequences=[x[2] for x in matched]
+                pairing={'method':'newest_admissible_receive_pair_v1','skew_ns':abs(stamps[0]-stamps[1]),
+                         'ages_ns':[now-t for t in stamps],'max_age_ns':age_ns,'max_skew_ns':skew_ns,
+                         'latest_received_fids':[w.metadata.get('fid') for w in wrench],
+                         'timestamp_basis':'recording_host_receive_monotonic_not_hardware_exposure'}
+            elif abs(stamps[0]-stamps[1])>self.max_skew_ns:
                 raise SensorFault("Raw finger wrench time skew")
+            times={k:self._latest[k].monotonic_ns for k in keys}
+            ids={k:self._latest[k].metadata.get('fid') for k in keys}
+            for side,t,fid in zip(('left','right'),stamps,sequences):
+                times['wrench_raw_'+side]=t;ids['wrench_raw_'+side]=fid
             return {"dd":[self._latest["dd_"+s].data.copy() for s in ("left","right")],
-                    "wrench_raw":np.stack([x.data for x in wrench]),"wrench_unit":"unknown_sdk_raw",
-                    "timestamp_ns":min(self._latest[k].monotonic_ns for k in keys),
-                    "source_timestamp_ns":{k:self._latest[k].monotonic_ns for k in keys},
-                    "source_sequences":{k:self._latest[k].metadata.get("fid") for k in keys},
+                    "wrench_raw":np.stack(values),"wrench_unit":"unknown_sdk_raw",
+                    "timestamp_ns":min(times.values()),"wrench_pairing":pairing,
+                    "source_timestamp_ns":times,"source_sequences":ids,
                     "fault":None,"sensor_provenance":dict(self.provenance)}
 
     def snapshot(self):

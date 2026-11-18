@@ -40,6 +40,8 @@ def consumer_plan(target,spec,req):
 
 
 def pair_status(first,second,bundle,spec):
+    if second['provenance'].get('placement_continuity') is False:
+        return {'paired':False,'reason':'placement_changed_or_unconfirmed'}
     if not bundle:return {'paired':False,'reason':'no_prior_pair_metric'}
     cfg=spec['consumer']
     pos,ang=pose_error(first['provenance']['measured_pose'],second['provenance']['measured_pose'])
@@ -196,6 +198,10 @@ def run_trial(request,directory,spec,cfg,io,*,sources=None):
         else:
             with io.contact(len(wins)) as raw:
                 if raw is None:pair={'paired':False,'reason':'second_contact_invalid'}
+                elif raw['provenance'].get('placement_continuity') is False:
+                    raw.update(tags,is_terminal=False)
+                    wins.append(raw)
+                    pair={'paired':False,'reason':'second_skipped_placement_changed_or_unconfirmed'}
                 else:
                     raw.update(tags,is_terminal=True)
                     raw['provenance']['direct_A']=ctl=='direct'
@@ -245,6 +251,7 @@ def run_trial(request,directory,spec,cfg,io,*,sources=None):
                 initial_coordinate_evidence=first.get('provenance',{}),consumer_order=order,
                 consumer_seed=request.get('consumer_seed'),paired=pair['paired'],pairing=pair,
                 terminal_outcomes=posts,consumer_outcomes=outcomes,consumer_outcome=outcomes.get(target),
-                action_commands=actions,move_receipts=list(map(str,receipts)),cost={'actions':len(receipts),'wall_seconds':time.monotonic()-start},**tags)
+                preparation=getattr(io,'preparation_report',None),
+                action_commands=actions,move_receipts=list(map(str,receipts)),cost={'actions':len(receipts),'probe_refreshes':getattr(io,'probe_refresh_count',0),'wall_seconds':time.monotonic()-start},**tags)
     campaign.atomic(directory/'completed_capture.json',result)
     return result

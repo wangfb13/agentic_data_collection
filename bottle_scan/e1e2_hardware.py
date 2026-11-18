@@ -353,8 +353,9 @@ class Hardware:
         except BaseException:self.close();raise
     def now(self):return time.monotonic_ns()
     def pose(self):return np.asarray(self.arm.read_pose(),float)
-    def force_sample(self):
-        raw=self.sensors.observation_snapshot()
+    def force_sample(self, *, pair_skew_s=None, pair_max_age_s=None):
+        raw=(self.sensors.observation_snapshot() if pair_skew_s is None else
+             self.sensors.observation_snapshot(pair_skew_s=pair_skew_s,pair_max_age_s=pair_max_age_s))
         if self.zero is None:raise RuntimeError('尚未扣零')
         f=self.cfg['force'];delta=raw['wrench_raw']-np.asarray(self.zero['offset_raw'])
         return {'normal':delta[:,f['normal_axis']]*np.asarray(f['normal_signs']),

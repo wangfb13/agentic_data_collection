@@ -191,6 +191,7 @@ def main(argv=None):
     mode.add_argument('--check',action='store_true')
     mode.add_argument('--list-deferred',action='store_true')
     mode.add_argument('--retry-deferred',nargs='+',metavar='ID')
+    mode.add_argument('--resume-interrupted',action='store_true',help='确认已停臂、瓶已放稳且夹爪张开空载：归档已知技术中断，保留费用，重排原试次后继续')
     args=p.parse_args(argv)
     out=OUTPUT.with_name(OUTPUT.name+'_v5') if args.graph_version==5 else OUTPUT
     out=args.out or out
@@ -208,7 +209,17 @@ def main(argv=None):
     elif args.retry_deferred:
         print(campaign.release_deferred(out,args.retry_deferred))
     else:
-        state=campaign.run(out,real=args.real,allow_agent=args.allow_agent,on_interruption=campaign_ah.offer_defer)
+        if args.resume_interrupted:
+            from .p3_resume import resume_interrupted
+            print('[graph-loop] 恢复原试次：',resume_interrupted(out,scene_reset_confirmed=True))
+        options={}
+        if args.graph_version==5:
+            policy=campaign.read(out/'spec.json')
+            if policy.get('loop',{}).get('run_through_budget'):
+                # Six stages per round, with room for a final round and independent B.
+                # The trial/dispatch budgets and all explicit pause/stop states still apply.
+                options['max_decisions']=6*(policy['budget']['max_new_trials']+1)+1
+        state=campaign.run(out,real=args.real,allow_agent=args.allow_agent,on_interruption=campaign_ah.offer_defer,**options)
         print({k:state[k] for k in ('phase','spent','complete','pending')})
         campaign_ah.show_deferred(state)
 
